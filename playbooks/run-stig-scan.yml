@@ -1,7 +1,34 @@
 ---
 - name: Run Evaluate-STIG Scan
-  hosts: domain_controllers
+  hosts: all
   gather_facts: no
 
-  roles:
-    - stig-run
+  vars:
+    stig_local_path: "C:\\ProgramData\\Evaluate-STIG_1.2507.5"
+    stig_share_results: "\\\\192.168.10.198\\stig-results"
+    hostname: "{{ inventory_hostname_short }}"
+
+  tasks:
+
+  - name: Run STIG Scan (CKL + Summary)
+    ansible.windows.win_shell: |
+      cd "{{ stig_local_path }}"
+      .\Evaluate-STIG.ps1 -Output ckl -Summary
+
+  - name: Map STIG Results Share (R drive)
+    ansible.windows.win_shell: |
+      $User = "{{ ansible_user }}"
+      $Pass = "{{ ansible_password }}" | ConvertTo-SecureString -AsPlainText -Force
+      $Cred = New-Object System.Management.Automation.PSCredential($User, $Pass)
+      New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $Cred -ErrorAction Stop
+
+  - name: Ensure host result folder exists
+    ansible.windows.win_file:
+      path: "R:\\{{ hostname }}"
+      state: directory
+
+  - name: Copy Scan Results to NAS
+    ansible.windows.win_shell: |
+      Copy-Item "{{ stig_local_path }}\\*.ckl" "R:\\{{ hostname }}" -Force
+      Copy-Item "{{ stig_local_path }}\\*.txt" "R:\\{{ hostname }}" -Force
+
