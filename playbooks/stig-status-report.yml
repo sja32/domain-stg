@@ -1,0 +1,66 @@
+---
+# Playbook: stig-status-report.yml
+# Purpose: Summarize Evaluate-STIG results across all systems and provide dashboard output
+
+- name: Generate STIG Compliance Status Dashboard
+  hosts: all
+  gather_facts: no
+
+  vars:
+    results_path: "{{ results_share_root }}/{{ inventory_hostname }}"
+
+  tasks:
+    - name: Check if host has any scan results
+      ansible.windows.win_shell: |
+        if (Test-Path "{{ results_path }}") {
+            (Get-ChildItem "{{ results_path }}" -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+        } else {
+            Write-Output "NO_RESULTS"
+        }
+      register: stig_last_result_path_raw
+
+    - name: Normalize output
+      set_fact:
+        stig_last_result_path: "{{ stig_last_result_path_raw.stdout | trim }}"
+
+    - name: Mark status if no results
+      when: stig_last_result_path == "NO_RESULTS"
+      set_fact:
+        stig_status: "❌ No STIG results found"
+
+    - name: Extract CKL/Summary (if available)
+      when: stig_last_result_path != "NO_RESULTS"
+      ansible.windows.win_shell: |
+        $summaryFile = Join-Path "{{ stig_last_result_path }}" "summary.json"
+        if (Test-Path $summaryFile) {
+            $json = Get-Content $summaryFile -Raw | ConvertFrom-Json
+            "$($json.total_failures)|$($json.total_warnings)|$($json.total_passes)"
+        } else {
+            "NO_SUMMARY"
+        }
+      register: stig_summary_raw
+
+    - name: Parse summary
+      when: stig_summary_raw.stdout != "NO_SUMMARY"
+      set_fact:
+        stig_failures: "{{ stig_summary_raw.stdout.split('|')[0] }}"
+        stig_warnings: "{{ stig_summary_raw.stdout.split('|')[1] }}"
+        stig_passes: "{{ stig_summary_raw.stdout.split('|')[2] }}"
+        stig_status: >
+          {% if stig_failures|int > 0 %}
+          🔥 FAIL ({{ stig_failures }} failures)
+          {% elif stig_warnings|int > 0 %}
+          ⚠️ WARN ({{ stig_warnings }} warnings)
+          {% else %}
+          ✅ PASS
+          {% endif %}
+
+    - name: Show dashboard line
+      debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "Last Result: {{ stig_last_result_path }}"
+          - "Status: {{ stig_status }}"
+          - "Pass: {{ stig_passes | default('N/A') }}"
+          - "Warn: {{ stig_warnings | default('N/A') }}"
+          - "Fail: {{ stig_failures | default('N/A') }}"
