@@ -1,43 +1,7 @@
 ---
-- name: Prepare Host for Evaluate-STIG
-  hosts: all
+- name: Prepare Hosts for Evaluate-STIG
+  hosts: domain_controllers
   gather_facts: no
 
-  vars:
-    stig_share_eval: "\\\\192.168.10.198\\Evaluate-STIG"
-    stig_version: "Evaluate-STIG_1.2507.5"
-    stig_local_path: "C:\\ProgramData\\Evaluate-STIG_1.2507.5"
-
-  tasks:
-
-  - name: Map Evaluate-STIG share as drive Z
-    ansible.windows.win_shell: |
-      $User = "{{ ansible_user }}"
-      $Pass = "{{ ansible_password }}" | ConvertTo-SecureString -AsPlainText -Force
-      $Cred = New-Object System.Management.Automation.PSCredential($User, $Pass)
-      New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_eval }}" -Credential $Cred -ErrorAction Stop
-    ignore_errors: no
-
-  - name: Ensure local install directory exists
-    ansible.windows.win_file:
-      path: "{{ stig_local_path }}"
-      state: directory
-
-  - name: Copy Evaluate-STIG folder locally
-    ansible.windows.win_copy:
-      src: "Z:\\{{ stig_version }}"
-      dest: "{{ stig_local_path }}"
-      remote_src: yes
-      force: yes
-
-  - name: Unblock all downloaded files
-    ansible.windows.win_shell: |
-      Get-ChildItem -Recurse "{{ stig_local_path }}" | Unblock-File
-
-  - name: Import certificates
-    ansible.windows.win_shell: |
-      & "{{ stig_local_path }}\\Prerequisites\\Import-Certificates.bat"
-
-  - name: Run prerequisite tests
-    ansible.windows.win_shell: |
-      & "{{ stig_local_path }}\\Prerequisites\\Test-Prerequisites.bat"
+  roles:
+    - stig-prep
