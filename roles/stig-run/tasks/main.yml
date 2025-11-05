@@ -1,51 +1,53 @@
 ---
-- name: Ensure Evaluate-STIG directory exists
-  ansible.windows.win_file:
-    path: "{{ eval_stig_dest }}"
-    state: directory
-
-- name: Copy Evaluate-STIG package from file share
-  ansible.windows.win_copy:
-    src: "{{ eval_stig_source }}\\"
-    dest: "{{ eval_stig_dest }}\\"
-    remote_src: yes
-
-# 1️⃣ Import Signing Certificates
-- name: Import Evaluate-STIG Code Signing Certificates
+- name: Beautiful STIG Runner
   ansible.windows.win_shell: |
-    Set-Location "{{ eval_stig_dest }}\\Prerequisites"
-    .\Import-Certificates.bat
-  args:
-    chdir: "{{ eval_stig_dest }}\\Prerequisites"
-  register: cert_import
+    function Banner($Text) { Write-Host "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan; Write-Host " $Text" -ForegroundColor White; Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor Cyan }
 
-- name: Display cert import result
-  debug:
-    var: cert_import.stdout_lines
+    Banner "🚀  Starting Evaluate-STIG Scan on $env:COMPUTERNAME"
 
-# 2️⃣ Test Prerequisites
-- name: Validate Evaluate-STIG Prerequisites
-  ansible.windows.win_shell: |
-    Set-Location "{{ eval_stig_dest }}\\Prerequisites"
-    .\Test-Prerequisites.bat
-  register: prereq_test
+    $User = "{{ ansible_user }}"
+    $Pass = "{{ ansible_password }}" | ConvertTo-SecureString -AsPlainText -Force
+    $Cred = New-Object System.Management.Automation.PSCredential($User, $Pass)
 
-- name: Show prerequisites test results
-  debug:
-    var: prereq_test.stdout_lines
+    Write-Host "🔄  Mapping Evaluate-STIG Share..." -NoNewline
+    New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_eval }}" -Credential $Cred -ErrorAction Stop
+    Write-Host " ✅" -ForegroundColor Green
 
-# 3️⃣ Unblock any downloaded/NTFS-protected files
-- name: Unblock Evaluate-STIG files
-  ansible.windows.win_shell: |
-    Get-ChildItem "{{ eval_stig_dest }}" -Recurse | Unblock-File
+    Write-Host "📁  Ensuring Local Install Folder Exists..." -NoNewline
+    if (-Not (Test-Path "{{ stig_local_path }}")) {
+        New-Item -ItemType Directory -Path "{{ stig_local_path }}" | Out-Null
+        Copy-Item "Z:\{{ stig_version }}" "{{ stig_local_path }}" -Recurse -Force
+    }
+    Write-Host " ✅" -ForegroundColor Green
 
-# 4️⃣ Run Evaluate-STIG Scan
-- name: Run Evaluate-STIG scan
-  ansible.windows.win_shell: |
-    Set-Location "{{ eval_stig_dest }}"
-    .\Evaluate-STIG.ps1 -Output ckl -summary
+    Write-Host "🔓  Importing STIG Certificates..." -NoNewline
+    & "{{ stig_local_path }}\Prerequisites\Import-Certificates.bat"
+    Write-Host " ✅" -ForegroundColor Green
+
+    Write-Host "🧪  Running STIG Prerequisite Tests..." -NoNewline
+    & "{{ stig_local_path }}\Prerequisites\Test-Prerequisites.bat"
+    Write-Host " ✅" -ForegroundColor Green
+
+    Write-Host "`n🔍  Executing Evaluate-STIG Scan... (this may take several minutes)`n"
+    cd "{{ stig_local_path }}"
+    .\Evaluate-STIG.ps1 -Output ckl -Summary
+
+    Write-Host "`n🔄  Mapping STIG Results Share..." -NoNewline
+    New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $Cred -ErrorAction Stop
+    Write-Host " ✅" -ForegroundColor Green
+
+    $HN = $env:COMPUTERNAME
+
+    Write-Host "📂  Preparing Results Folder for $HN..." -NoNewline
+    New-Item -Path "R:\$HN" -ItemType Directory -Force | Out-Null
+    Write-Host " ✅" -ForegroundColor Green
+
+    Write-Host "⬆️  Uploading Results..."
+    Copy-Item "{{ stig_results_local }}\*" "R:\$HN" -Recurse -Force
+
+    Write-Host "`n✅  STIG Scan Complete for $HN" -ForegroundColor Green
+    Write-Host "📂  Results: \\192.168.10.198\\stig-results\\$HN"
   register: stig_output
 
-- name: Show scan output summary
-  debug:
-    msg: "{{ stig_output.stdout }}"
+- debug:
+    var: stig_output.stdout_lines
