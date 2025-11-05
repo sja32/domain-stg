@@ -1,7 +1,0 @@
----
-- name: Run STIG Scan
-  hosts: domain_controllers
-  gather_facts: no
-
-  roles:
-    - stig-run
