@@ -43,7 +43,7 @@
 - name: Run Evaluate-STIG scan
   ansible.windows.win_shell: |
     Set-Location "{{ eval_stig_dest }}"
-    .\Evaluate-STIG.ps1 -Output ckl
+    .\Evaluate-STIG.ps1 -Output ckl -summary
   register: stig_output
 
 - name: Show scan output summary
