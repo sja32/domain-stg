@@ -1,12 +1,12 @@
+stig_version: "Evaluate-STIG_1.2507.5"
+
+stig_share_eval: "\\\\192.168.10.198\\Evaluate-STIG"
+stig_share_results: "\\\\192.168.10.198\\stig-results"
+
+stig_local_path: "C:\\ProgramData\\{{ stig_version }}"
+stig_results_local: "C:\\Users\\Public\\Documents\\STIG_Compliance"
+
 ansible_user: "VoughtNet\\svc-ansible"
 ansible_connection: winrm
 ansible_winrm_transport: ntlm
-ansible_port: 5985
 ansible_winrm_server_cert_validation: ignore
-
-eval_stig_source: "\\\\192.168.10.198\\Evaluate-STIG\\Evaluate-STIG_1.2507.5"
-
-# ✅ This must end at the version folder, not the subfolder
-eval_stig_dest: "C:\\ProgramData\\Evaluate-STIG_1.2507.5"
-
-results_share_root: "\\\\192.168.10.198\\stig-results"
