@@ -1,0 +1,19 @@
+---
+- name: Determine result class
+  set_fact:
+    result_class: >-
+      {% if 'domain_controllers' in group_names %}Domain-Controllers
+      {% elif 'mbr_servers' in group_names %}MBR-Servers
+      {% else %}Workstations
+      {% endif %}
+
+- name: Ensure destination folder exists
+  ansible.windows.win_file:
+    path: "{{ results_share_root }}\\{{ result_class }}\\{{ inventory_hostname }}"
+    state: directory
+
+- name: Copy results back to file server
+  ansible.windows.win_copy:
+    src: "{{ eval_stig_dest }}\\Output\\"
+    dest: "{{ results_share_root }}\\{{ result_class }}\\{{ inventory_hostname }}"
+    remote_src: yes

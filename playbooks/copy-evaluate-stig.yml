@@ -1,0 +1,7 @@
+---
+- name: Copy Evaluate-STIG to hosts
+  hosts: all
+  gather_facts: no
+
+  roles:
+    - stig-copy

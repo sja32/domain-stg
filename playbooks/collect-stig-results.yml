@@ -1,0 +1,7 @@
+---
+- name: Collect STIG Scan Results
+  hosts: all
+  gather_facts: no
+
+  roles:
+    - stig-collect

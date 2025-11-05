@@ -1,0 +1,11 @@
+---
+- name: Ensure destination folder exists
+  ansible.windows.win_file:
+    path: "{{ eval_stig_dest }}"
+    state: directory
+
+- name: Copy Evaluate-STIG folder to host
+  ansible.windows.win_copy:
+    src: "{{ eval_stig_source }}"
+    dest: "{{ eval_stig_dest }}"
+    remote_src: yes

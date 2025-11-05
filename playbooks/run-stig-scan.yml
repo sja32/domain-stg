@@ -1,0 +1,6 @@
+---
+- name: Run Evaluate-STIG Scans
+  hosts: all
+  gather_facts: no
+  roles:
+    - stig-run

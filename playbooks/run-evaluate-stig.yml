@@ -1,0 +1,7 @@
+---
+- name: Run STIG Scan
+  hosts: all
+  gather_facts: no
+
+  roles:
+    - stig-run
