@@ -1,6 +1,7 @@
 ansible_user: "VoughtNet\\svc-ansible"
 ansible_connection: winrm
 ansible_winrm_transport: ntlm
+ansible_port: 5985
 ansible_winrm_server_cert_validation: ignore
 
 eval_stig_source: "\\\\192.168.10.198\\Evaluate-STIG\\Evaluate-STIG_1.2507.5"
