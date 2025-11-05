@@ -1,6 +1,16 @@
 ---
-- name: Run Evaluate-STIG Scans
-  hosts: all
+- name: STIG - Domain Controllers
+  hosts: domain_controllers
   gather_facts: no
-  roles:
-    - role: ../roles/stig-run
+
+  tasks:
+    - name: Run STIG Scan
+      ansible.windows.win_shell: |
+        PowerShell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\run_stig_scan.ps1" -ComputerName $env:COMPUTERNAME
+      args:
+        chdir: C:\ProgramData
+      register: stig_output
+
+    - name: Show Scan Output
+      debug:
+        var: stig_output.stdout_lines
