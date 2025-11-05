@@ -1,4 +1,9 @@
 ---
+- name: Copy run_stig_scan.ps1 to ProgramData
+  ansible.windows.win_copy:
+    src: "run_stig_scan.ps1"
+    dest: "C:\\ProgramData\\run_stig_scan.ps1"
+
 - name: Beautiful STIG Runner
   ansible.windows.win_shell: |
     function Banner($Text) { Write-Host "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan; Write-Host " $Text" -ForegroundColor White; Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor Cyan }
