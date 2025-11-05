@@ -3,4 +3,4 @@
   hosts: all
   gather_facts: no
   roles:
-    - stig-run
+    - role: ../roles/stig-run
