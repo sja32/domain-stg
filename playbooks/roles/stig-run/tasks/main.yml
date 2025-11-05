@@ -9,44 +9,51 @@
     $Pass = "{{ ansible_password }}" | ConvertTo-SecureString -AsPlainText -Force
     $Cred = New-Object System.Management.Automation.PSCredential($User, $Pass)
 
+    # Map Evaluate-STIG share
     Write-Host "🔄  Mapping Evaluate-STIG Share..." -NoNewline
-    New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_eval }}" -Credential $Cred -ErrorAction Stop
+    New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_eval }}" -Credential $Cred -ErrorAction Stop | Out-Null
     Write-Host " ✅" -ForegroundColor Green
 
+    # Ensure local install directory exists + refresh contents
+    $LocalPath = "{{ stig_local_path }}\{{ stig_version }}"
     Write-Host "📁  Ensuring Local Install Folder Exists..." -NoNewline
-    if (-Not (Test-Path "{{ stig_local_path }}")) {
-        New-Item -ItemType Directory -Path "{{ stig_local_path }}" | Out-Null
+    if (-Not (Test-Path $LocalPath)) {
+        New-Item -ItemType Directory -Path $LocalPath -Force | Out-Null
         Copy-Item "Z:\{{ stig_version }}" "{{ stig_local_path }}" -Recurse -Force
     }
     Write-Host " ✅" -ForegroundColor Green
 
+    # Import certs
     Write-Host "🔓  Importing STIG Certificates..." -NoNewline
-    & "{{ stig_local_path }}\Prerequisites\Import-Certificates.bat"
+    & "$LocalPath\Prerequisites\Import-Certificates.bat" | Out-Null
     Write-Host " ✅" -ForegroundColor Green
 
+    # Run prereqs tests
     Write-Host "🧪  Running STIG Prerequisite Tests..." -NoNewline
-    & "{{ stig_local_path }}\Prerequisites\Test-Prerequisites.bat"
+    & "$LocalPath\Prerequisites\Test-Prerequisites.bat" | Out-Null
     Write-Host " ✅" -ForegroundColor Green
 
+    # Execute scan
     Write-Host "`n🔍  Executing Evaluate-STIG Scan... (this may take several minutes)`n"
-    cd "{{ stig_local_path }}"
-    .\Evaluate-STIG.ps1 -Output ckl -Summary
+    cd $LocalPath
+    .\Evaluate-STIG.ps1 -Output ckl -Summary -ResultsDirectory "C:\ProgramData\Evaluate-STIG\Results" | Out-Null
 
+    # Map STIG Results share
     Write-Host "`n🔄  Mapping STIG Results Share..." -NoNewline
-    New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $Cred -ErrorAction Stop
+    New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $Cred -ErrorAction Stop | Out-Null
     Write-Host " ✅" -ForegroundColor Green
 
+    # Upload results
     $HN = $env:COMPUTERNAME
-
     Write-Host "📂  Preparing Results Folder for $HN..." -NoNewline
     New-Item -Path "R:\$HN" -ItemType Directory -Force | Out-Null
     Write-Host " ✅" -ForegroundColor Green
 
     Write-Host "⬆️  Uploading Results..."
-    Copy-Item "{{ stig_results_local }}\*" "R:\$HN" -Recurse -Force
+    Copy-Item "C:\ProgramData\Evaluate-STIG\Results\*" "R:\$HN" -Recurse -Force
 
     Write-Host "`n✅  STIG Scan Complete for $HN" -ForegroundColor Green
-    Write-Host "📂  Results: \\192.168.10.198\\stig-results\\$HN"
+    Write-Host "📂  Results: {{ stig_share_results }}\$HN"
   register: stig_output
 
 - debug:
