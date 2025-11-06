@@ -37,7 +37,7 @@
     # ✅ Correct full path to Import-Certificates.bat
     - name: Import DoD Certificates
       ansible.windows.win_shell: |
-        & "{{ stig_local_path }}\\Evaluate-STIG\\Prerequisites\\Import-Certificates.bat"
+        & "{{ stig_local_path }}\\Prerequisites\\Import-Certificates.bat"
       args:
         executable: PowerShell.exe
 
