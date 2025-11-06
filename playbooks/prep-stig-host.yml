@@ -1,23 +1,21 @@
 ---
-# Playbook: prep-stig-host.yml
-# Purpose: Copy Evaluate-STIG package from SMB share to ProgramData on each host
-# Behavior: Always overwrites and refreshes local copy
-
 - name: Prepare Hosts for Evaluate-STIG
   hosts: all
   gather_facts: no
 
   vars:
     stig_version: "Evaluate-STIG_1.2507.5"
-    stig_share_path: "\\\\192.168.10.198\\Evaluate-STIG"
+    stig_share_root: "\\\\192.168.10.198\\Evaluate-STIG"
     stig_local_path: "C:\\ProgramData\\Evaluate-STIG_1.2507.5"
+    smb_user: "VoughtNet\\svc-ansible"
+    smb_pass: "Luasi965!"
 
   tasks:
-
     - name: 🚀 Start Prep
-      debug:
+      ansible.builtin.debug:
         msg: "Preparing {{ inventory_hostname }} for Evaluate-STIG usage"
 
+    # Remove folder if it exists (ensures full refresh)
     - name: Remove existing Evaluate-STIG folder (force overwrite)
       ansible.windows.win_shell: |
         if (Test-Path "{{ stig_local_path }}") {
@@ -26,27 +24,26 @@
       args:
         executable: PowerShell.exe
 
+    # Recreate folder clean
     - name: Recreate Evaluate-STIG folder
       ansible.windows.win_file:
         path: "{{ stig_local_path }}"
         state: directory
 
+    # ✅ Copy Evaluate-STIG from SMB share using proper credential quoting
     - name: Copy Evaluate-STIG from SMB share to local ProgramData
       ansible.windows.win_shell: |
-        $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user | replace('\\','\\\\') }}", $sec)
+        $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $sec)
 
-        # Map share temporarily
-        New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_path }}" -Credential $cred -ErrorAction Stop | Out-Null
+        New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
-        # Copy package (entire folder contents)
         Copy-Item "Z:\\{{ stig_version }}\\*" "{{ stig_local_path }}" -Recurse -Force
 
-        # Clean up mapping
         Remove-PSDrive -Name Z -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
 
-    - name: ✅ Prep Complete
-      debug:
-        msg: "✅ Evaluate-STIG package refreshed on {{ inventory_hostname }}"
+    - name: ✅ Done
+      ansible.builtin.debug:
+        msg: "✅ Evaluate-STIG package deployed to {{ stig_local_path }} on {{ inventory_hostname }}"
