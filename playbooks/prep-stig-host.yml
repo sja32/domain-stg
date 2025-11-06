@@ -4,9 +4,9 @@
   gather_facts: no
 
   vars:
-    stig_version: "Evaluate-STIG_1.2507.5"
-    stig_local_path: "C:\\ProgramData\\{{ stig_version }}"
     stig_share_eval: "\\\\192.168.10.198\\Evaluate-STIG"
+    stig_version: "Evaluate-STIG_1.2507.5"
+    stig_local_root: "C:\\ProgramData\\Evaluate-STIG_1.2507.5"   # <-- Correct local destination
 
   tasks:
 
@@ -14,14 +14,12 @@
       ansible.builtin.debug:
         msg: "Preparing {{ inventory_hostname }} for Evaluate-STIG"
 
-    # Ensure local folder exists (parent)
-    - name: Ensure local Evaluate-STIG folder exists
+    - name: Ensure local Evaluate-STIG directory exists
       ansible.windows.win_file:
-        path: "{{ stig_local_path }}"
+        path: "{{ stig_local_root }}"
         state: directory
 
-    # Force refresh content from share
-    - name: Copy Evaluate-STIG to ProgramData (force refresh)
+    - name: Copy Evaluate-STIG package from share → local (fresh sync)
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
@@ -29,29 +27,10 @@
         # Map share
         New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_eval }}" -Credential $cred -ErrorAction Stop | Out-Null
 
-        # Remove existing contents (but not the folder)
-        if (Test-Path "{{ stig_local_path }}") {
-            Remove-Item "{{ stig_local_path }}\*" -Recurse -Force -ErrorAction SilentlyContinue
+        # Clear existing contents (but not the folder)
+        if (Test-Path "{{ stig_local_root }}") {
+            Remove-Item "{{ stig_local_root }}\\*" -Recurse -Force -ErrorAction SilentlyContinue
         }
 
-        # Copy new contents
-        Copy-Item "Z:\\{{ stig_version }}\*" "{{ stig_local_path }}" -Recurse -Force
-
-        # Cleanup
-        Remove-PSDrive -Name Z -Force -ErrorAction SilentlyContinue
-      args:
-        executable: PowerShell.exe
-      register: copy_output
-      changed_when: true
-
-    - debug:
-        var: copy_output.stdout_lines
-
-    # Unblock scripts so they can run
-    - name: Unblock Evaluate-STIG PowerShell scripts
-      ansible.windows.win_shell: |
-        Get-ChildItem -Path "{{ stig_local_path }}" -Recurse -Include *.ps1,*.psm1,*.psd1 | Unblock-File
-      args:
-        executable: PowerShell.exe
-
-    # I
+        # Copy new files (no extra nested folder)
+        C
