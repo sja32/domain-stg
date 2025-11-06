@@ -12,19 +12,60 @@
 
   tasks:
 
-    ###################################################################
-    # 1️⃣ Ensure working directory exists
-    ###################################################################
     - name: Ensure Evaluate-STIG working directory exists
       ansible.windows.win_file:
         path: "{{ stig_workdir }}"
         state: directory
 
-    ###################################################################
-    # 2️⃣ Run Evaluate-STIG scan (Output CKL only)
-    ###################################################################
     - name: Run Evaluate-STIG scan
       ansible.windows.win_shell: |
         Write-Host "Running Evaluate-STIG scan..."
         if (-not (Test-Path "{{ stig_workdir }}\\Evaluate-STIG.ps1")) {
-            throw "Evaluate-STIG.ps1 not f
+            throw "Evaluate-STIG.ps1 not found in {{ stig_workdir }}"
+        }
+        Set-Location "{{ stig_workdir }}"
+        .\Evaluate-STIG.ps1 -Output ckl
+        Write-Host "✅ STIG scan completed successfully."
+      args:
+        executable: PowerShell.exe
+      register: stig_scan_result
+
+    - name: Ensure local results directory exists
+      ansible.windows.win_file:
+        path: "{{ stig_results }}"
+        state: directory
+
+    - name: Create hostname folder on SMB share
+      ansible.windows.win_shell: |
+        $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $sec)
+        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+
+        if (-not (Test-Path "R:\\{{ inventory_hostname }}")) {
+            New-Item -ItemType Directory -Path "R:\\{{ inventory_hostname }}" | Out-Null
+        }
+
+        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+      args:
+        executable: PowerShell.exe
+
+    - name: Upload entire STIG_Compliance folder to share
+      ansible.windows.win_shell: |
+        $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $sec)
+        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+
+        $src = "{{ stig_results }}"
+        $dest = "R:\\{{ inventory_hostname }}"
+
+        Copy-Item "$src\\*" "$dest" -Recurse -Force
+
+        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+      args:
+        executable: PowerShell.exe
+
+    - name: Display Summary
+      debug:
+        msg:
+          - "✅ STIG Scan completed on {{ inventory_hostname }}"
+          - "📤 Results uploaded to: {{ smb_share_root }}\\{{ inventory_hostname }}"
