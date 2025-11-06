@@ -14,34 +14,30 @@
       ansible.builtin.debug:
         msg: "Preparing {{ inventory_hostname }} for Evaluate-STIG"
 
-    # Ensure ProgramData folder exists
     - name: Ensure local Evaluate-STIG folder exists
       ansible.windows.win_file:
         path: "{{ stig_local_path }}"
         state: directory
 
-    # Copy Evaluate-STIG (UNC, no PSDrive)
     - name: Copy Evaluate-STIG to ProgramData (UNC path, no drive mapping)
       ansible.windows.win_shell: |
         Copy-Item "{{ stig_remote_path }}\\*" "{{ stig_local_path }}" -Recurse -Force
       args:
         executable: PowerShell.exe
 
-    # Unblock PowerShell scripts so they execute cleanly
     - name: Unblock Evaluate-STIG PowerShell scripts
       ansible.windows.win_shell: |
         Get-ChildItem -Path "{{ stig_local_path }}" -Recurse -Include *.ps1,*.psm1,*.psd1 | Unblock-File
       args:
         executable: PowerShell.exe
 
-    # ✅ Correct full path to Import-Certificates.bat
+    # ✅ Correct Location
     - name: Import DoD Certificates
       ansible.windows.win_shell: |
         & "{{ stig_local_path }}\\Prerequisites\\Import-Certificates.bat"
       args:
         executable: PowerShell.exe
 
-    # Quick sanity test — makes sure WinRM responds on the host
     - name: Verify WinRM responds to remote commands
       ansible.windows.win_shell: |
         Write-Output "WinRM OK from $env:COMPUTERNAME"
@@ -52,6 +48,6 @@
     - debug:
         msg: "{{ winrm_check.stdout }}"
 
-    - name: ✅ Banner - Complete
+    - name: ✅ Host Prep Complete
       ansible.builtin.debug:
         msg: "✅ Host prep complete on {{ inventory_hostname }}"
