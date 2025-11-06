@@ -8,41 +8,23 @@
     stig_results: "C:\\Users\\Public\\Documents\\STIG_Compliance"
     smb_share_root: "\\\\192.168.10.198\\stig-results"
     smb_user: "voughtnet\\svc-ansible"
-    smb_pass: "Luasi965!"   # (or vault this later)
+    smb_pass: "Luasi965!"
 
   tasks:
 
-    - name: Ensure STIG results directory exists
+    ###################################################################
+    # 1️⃣ Ensure working directory exists
+    ###################################################################
+    - name: Ensure Evaluate-STIG working directory exists
       ansible.windows.win_file:
-        path: "{{ stig_results }}"
+        path: "{{ stig_workdir }}"
         state: directory
 
-    - name: Run Evaluate-STIG scan - CKL output only
+    ###################################################################
+    # 2️⃣ Run Evaluate-STIG scan (Output CKL only)
+    ###################################################################
+    - name: Run Evaluate-STIG scan
       ansible.windows.win_shell: |
-        Set-Location "{{ stig_workdir }}"
-        .\Evaluate-STIG.ps1 -Output ckl
-      args:
-        executable: PowerShell.exe
-      register: stig_scan_result
-      changed_when: true
-
-    - name: Create hostname folder on share
-      ansible.windows.win_shell: |
-        $pass = "{{ smb_pass }}" | ConvertTo-SecureString -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $pass)
-        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
-        if (-not (Test-Path "R:\\{{ inventory_hostname }}")) {
-            New-Item -ItemType Directory -Path "R:\\{{ inventory_hostname }}" | Out-Null
-        }
-        Remove-PSDrive -Name R -Force
-      args:
-        executable: PowerShell.exe
-
-    - name: Upload entire STIG_Compliance folder to share
-      ansible.windows.win_shell: |
-        $pass = "{{ smb_pass }}" | ConvertTo-SecureString -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $pass)
-        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
-
-        $src = "{{ stig_results }}"
-        $dest = "R:\\{{ inventory
+        Write-Host "Running Evaluate-STIG scan..."
+        if (-not (Test-Path "{{ stig_workdir }}\\Evaluate-STIG.ps1")) {
+            throw "Evaluate-STIG.ps1 not f
