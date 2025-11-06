@@ -6,7 +6,7 @@
   vars:
     stig_version: "Evaluate-STIG_1.2507.5"
     stig_local_path: "C:\\ProgramData\\{{ stig_version }}"
-    stig_remote_path: "\\\\192.168.10.198\\Evaluate-STIG\\{{ stig_version }}"
+    stig_share_eval: "\\\\192.168.10.198\\Evaluate-STIG"
 
   tasks:
 
@@ -14,44 +14,44 @@
       ansible.builtin.debug:
         msg: "Preparing {{ inventory_hostname }} for Evaluate-STIG"
 
+    # Ensure local folder exists (parent)
     - name: Ensure local Evaluate-STIG folder exists
       ansible.windows.win_file:
         path: "{{ stig_local_path }}"
         state: directory
 
-    - name: Copy Evaluate-STIG to ProgramData
+    # Force refresh content from share
+    - name: Copy Evaluate-STIG to ProgramData (force refresh)
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
-        New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_remote_path | dirname }}" -Credential $cred -ErrorAction Stop | Out-Null
-        Copy-Item "Z:\{{ stig_version }}" "{{ stig_local_path }}" -Recurse -Force
+
+        # Map share
+        New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_eval }}" -Credential $cred -ErrorAction Stop | Out-Null
+
+        # Remove existing contents (but not the folder)
+        if (Test-Path "{{ stig_local_path }}") {
+            Remove-Item "{{ stig_local_path }}\*" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        # Copy new contents
+        Copy-Item "Z:\\{{ stig_version }}\*" "{{ stig_local_path }}" -Recurse -Force
+
+        # Cleanup
         Remove-PSDrive -Name Z -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
+      register: copy_output
+      changed_when: true
 
+    - debug:
+        var: copy_output.stdout_lines
+
+    # Unblock scripts so they can run
     - name: Unblock Evaluate-STIG PowerShell scripts
       ansible.windows.win_shell: |
         Get-ChildItem -Path "{{ stig_local_path }}" -Recurse -Include *.ps1,*.psm1,*.psd1 | Unblock-File
       args:
         executable: PowerShell.exe
 
-    # ✅ Correct Location
-    - name: Import DoD Certificates
-      ansible.windows.win_shell: |
-        & "{{ stig_local_path }}\\Prerequisites\\Import-Certificates.bat"
-      args:
-        executable: PowerShell.exe
-
-    - name: Verify WinRM responds to remote commands
-      ansible.windows.win_shell: |
-        Write-Output "WinRM OK from $env:COMPUTERNAME"
-      args:
-        executable: PowerShell.exe
-      register: winrm_check
-
-    - debug:
-        msg: "{{ winrm_check.stdout }}"
-
-    - name: ✅ Host Prep Complete
-      ansible.builtin.debug:
-        msg: "✅ Host prep complete on {{ inventory_hostname }}"
+    # I
