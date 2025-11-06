@@ -18,8 +18,8 @@
   args:
     executable: PowerShell.exe
 
-- name: "Copy Evaluate-STIG to ProgramData"
-  ansible.windows.win_shell: |
+- name: Copy Evaluate-STIG to ProgramData
+  ansible.windows.win_shell: >
     Copy-Item "Z:\{{ stig_version }}" "{{ stig_local_path }}" -Recurse -Force
   args:
     executable: PowerShell.exe
@@ -27,7 +27,8 @@
   changed_when: true
 
 - debug:
-    var: copy_out.stdout_lines
+    var: copy_out.stderr_lines
+
 
 # Unblock PowerShell scripts
 - name: "Unblock all Evaluate-STIG scripts"
