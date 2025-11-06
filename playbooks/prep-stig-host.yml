@@ -1,7 +1,7 @@
 ---
 # Playbook: prep-stig-host.yml
-# Purpose: Copy the Evaluate-STIG package from SMB share to ProgramData on each host
-# Behavior: Always overwrite, always refresh package
+# Purpose: Copy Evaluate-STIG package from SMB share to ProgramData on each host
+# Behavior: Always overwrites and refreshes local copy
 
 - name: Prepare Hosts for Evaluate-STIG
   hosts: all
@@ -34,7 +34,7 @@
     - name: Copy Evaluate-STIG from SMB share to local ProgramData
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user | replace('\\','\\\\') }}", $sec)
 
         # Map share temporarily
         New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_path }}" -Credential $cred -ErrorAction Stop | Out-Null
@@ -49,4 +49,4 @@
 
     - name: ✅ Prep Complete
       debug:
-        msg: "✅ {{ inventory_hostname }} now has a clean Evaluate-STIG package at {{ stig_local_path }}"
+        msg: "✅ Evaluate-STIG package refreshed on {{ inventory_hostname }}"
