@@ -6,8 +6,6 @@
   vars:
     stig_share_path: "\\\\192.168.10.198\\Evaluate-STIG\\Evaluate-STIG_1.2507.5"
     stig_local_path: "C:\\ProgramData\\Evaluate-STIG_1.2507.5"
-    smb_user: "VoughtNet\\svc-ansible"
-    smb_pass: "Luasi965!"
 
   tasks:
     - name: 🚀 Start Prep
@@ -26,11 +24,11 @@
         path: "{{ stig_local_path }}"
         state: directory
 
-    - name: Copy Evaluate-STIG files to ProgramData (using secure SMB credentials)
+    - name: Copy Evaluate-STIG files to ProgramData (using AWX injected credentials)
       ansible.windows.win_powershell:
         script: |
-          $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $sec)
+          $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
 
           New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_path }}" -Credential $cred -ErrorAction Stop | Out-Null
 
