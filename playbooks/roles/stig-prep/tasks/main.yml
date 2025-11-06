@@ -1,16 +1,16 @@
 ---
-- name: Banner - Start Host Prep
+- name: "🚀 Banner - Start Host Prep"
   ansible.builtin.debug:
-    msg: "🚀 Preparing {{ inventory_hostname }} for Evaluate-STIG"
+    msg: "Preparing {{ inventory_hostname }} for Evaluate-STIG"
 
 # Ensure ProgramData subfolder exists
-- name: Ensure local Evaluate-STIG folder exists
+- name: "Ensure local Evaluate-STIG folder exists"
   ansible.windows.win_file:
     path: "{{ stig_local_path }}"
     state: directory
 
 # Map Evaluate-STIG share temporarily
-- name: Map Evaluate-STIG share as Z:
+- name: "Map Evaluate-STIG share as Z:"
   ansible.windows.win_shell: |
     New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_eval }}" -ErrorAction Stop
   args:
@@ -18,7 +18,7 @@
   ignore_errors: false
 
 # Copy Evaluate-STIG files to local ProgramData
-- name: Copy Evaluate-STIG to ProgramData
+- name: "Copy Evaluate-STIG to ProgramData"
   ansible.windows.win_shell: |
     Copy-Item "Z:\{{ stig_version }}" "{{ stig_local_path }}" -Recurse -Force
   args:
@@ -30,21 +30,21 @@
     var: copy_out.stdout_lines
 
 # Unblock PowerShell scripts
-- name: Unblock all Evaluate-STIG scripts
+- name: "Unblock all Evaluate-STIG scripts"
   ansible.windows.win_shell: |
     Get-ChildItem -Path "{{ stig_local_path }}" -Recurse -Include *.ps1,*.psm1,*.psd1 | Unblock-File
   args:
     executable: PowerShell.exe
 
 # Import DoD Certificates
-- name: Import DoD Certificates (Root + Intermediate)
+- name: "Import DoD Certificates (Root + Intermediate)"
   ansible.windows.win_shell: |
     & "{{ stig_local_path }}\Prerequisites\Import-Certificates.bat"
   args:
     executable: PowerShell.exe
 
 # Confirm WinRM Access
-- name: Verify WinRM responds to remote commands
+- name: "Verify WinRM responds to remote commands"
   ansible.windows.win_shell: |
     Write-Output "WinRM OK from $env:COMPUTERNAME"
   args:
@@ -55,13 +55,13 @@
     msg: "{{ winrm_check.stdout }}"
 
 # Clean up Drive Mapping
-- name: Remove Z: mapped drive
+- name: "Remove Z: mapped drive"
   ansible.windows.win_shell: |
     Remove-PSDrive -Name Z -Force
   args:
     executable: PowerShell.exe
   ignore_errors: yes
 
-- name: Banner - Complete
+- name: "✅ Banner - Complete"
   ansible.builtin.debug:
-    msg: "✅ Host prep complete on {{ inventory_hostname }}"
+    msg: "Host prep complete on {{ inventory_hostname }}"
