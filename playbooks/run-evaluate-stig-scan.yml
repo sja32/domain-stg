@@ -33,7 +33,7 @@
             throw "❌ Evaluate-STIG.ps1 not found in {{ stig_workdir }}"
         }
         Set-Location "{{ stig_workdir }}"
-        .\\Evaluate-STIG.ps1 -Output ckl -Summary
+        .\\Evaluate-STIG.ps1 -Output ckl 
         Write-Host "✅ STIG scan completed."
       args:
         executable: PowerShell.exe
