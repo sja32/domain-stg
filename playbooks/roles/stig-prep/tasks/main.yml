@@ -54,13 +54,13 @@
 - debug:
     msg: "{{ winrm_check.stdout }}"
 
-# Clean up Drive Mapping
 - name: "Remove Z: mapped drive"
   ansible.windows.win_shell: |
     Remove-PSDrive -Name Z -Force
   args:
     executable: PowerShell.exe
   ignore_errors: yes
+
 
 - name: "✅ Banner - Complete"
   ansible.builtin.debug:
