@@ -9,15 +9,15 @@
     path: "{{ stig_local_path }}"
     state: directory
 
-# Map Evaluate-STIG share temporarily
 - name: "Map Evaluate-STIG share as Z:"
   ansible.windows.win_shell: |
-    New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_eval }}" -ErrorAction Stop
+    $User = "{{ ansible_user }}"
+    $Pass = "{{ ansible_password }}" | ConvertTo-SecureString -AsPlainText -Force
+    $Cred = New-Object System.Management.Automation.PSCredential($User, $Pass)
+    New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_eval }}" -Credential $Cred -ErrorAction Stop | Out-Null
   args:
     executable: PowerShell.exe
-  ignore_errors: false
 
-# Copy Evaluate-STIG files to local ProgramData
 - name: "Copy Evaluate-STIG to ProgramData"
   ansible.windows.win_shell: |
     Copy-Item "Z:\{{ stig_version }}" "{{ stig_local_path }}" -Recurse -Force
