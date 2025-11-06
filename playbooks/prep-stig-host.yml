@@ -19,9 +19,13 @@
         path: "{{ stig_local_path }}"
         state: directory
 
-    - name: Copy Evaluate-STIG to ProgramData (UNC path, no drive mapping)
+    - name: Copy Evaluate-STIG to ProgramData
       ansible.windows.win_shell: |
-        Copy-Item "{{ stig_remote_path }}\\*" "{{ stig_local_path }}" -Recurse -Force
+        $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+        New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_remote_path | dirname }}" -Credential $cred -ErrorAction Stop | Out-Null
+        Copy-Item "Z:\{{ stig_version }}" "{{ stig_local_path }}" -Recurse -Force
+        Remove-PSDrive -Name Z -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
 
