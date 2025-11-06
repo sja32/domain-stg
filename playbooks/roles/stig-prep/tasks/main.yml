@@ -11,15 +11,18 @@
 
 # Map Evaluate-STIG share temporarily
 - name: Map Evaluate-STIG share as Z:
-  ansible.windows.win_command: |
-    PowerShell.exe -NoProfile -Command "New-PSDrive -Name Z -PSProvider FileSystem -Root '{{ stig_share_eval }}' -ErrorAction Stop"
+  ansible.windows.win_shell: |
+    New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_eval }}" -ErrorAction Stop
   args:
-    creates: "Z:\\{{ stig_version }}"
+    executable: PowerShell.exe
+  ignore_errors: false
 
 # Copy Evaluate-STIG files to local ProgramData
 - name: Copy Evaluate-STIG to ProgramData
-  ansible.windows.win_command: |
-    PowerShell.exe -NoProfile -Command "Copy-Item 'Z:\\{{ stig_version }}' '{{ stig_local_path }}' -Recurse -Force"
+  ansible.windows.win_shell: |
+    Copy-Item "Z:\{{ stig_version }}" "{{ stig_local_path }}" -Recurse -Force
+  args:
+    executable: PowerShell.exe
   register: copy_out
   changed_when: true
 
@@ -35,13 +38,17 @@
 
 # Import DoD Certificates
 - name: Import DoD Certificates (Root + Intermediate)
-  ansible.windows.win_command: |
-    PowerShell.exe -NoProfile -Command "& '{{ stig_local_path }}\\Prerequisites\\Import-Certificates.bat'"
+  ansible.windows.win_shell: |
+    & "{{ stig_local_path }}\Prerequisites\Import-Certificates.bat"
+  args:
+    executable: PowerShell.exe
 
 # Confirm WinRM Access
 - name: Verify WinRM responds to remote commands
   ansible.windows.win_shell: |
     Write-Output "WinRM OK from $env:COMPUTERNAME"
+  args:
+    executable: PowerShell.exe
   register: winrm_check
 
 - debug:
@@ -49,8 +56,10 @@
 
 # Clean up Drive Mapping
 - name: Remove Z: mapped drive
-  ansible.windows.win_command: |
-    PowerShell.exe -NoProfile -Command "Remove-PSDrive -Name Z -Force"
+  ansible.windows.win_shell: |
+    Remove-PSDrive -Name Z -Force
+  args:
+    executable: PowerShell.exe
   ignore_errors: yes
 
 - name: Banner - Complete
