@@ -1,81 +1,36 @@
 ---
 - name: Run Evaluate-STIG scan and upload results
-  hosts: all
-  gather_facts: false
-
+  hosts: windows_servers
+  gather_facts: no
   vars:
-    stig_results_smb_path: "192.168.10.50\\stig-results"   # Change if needed
-    stig_script_path: "C:\\ProgramData\\Evaluate-STIG\\Evaluate-STIG.ps1"
-    stig_output_path: "C:\\ProgramData\\Evaluate-STIG\\Results"
-    role_name: "Windows-Server"  # Or override via inventory/group_vars
+    smb_share: "\\\\192.168.10.50\\stig-results"
 
   tasks:
+    ###################################################################
+    # Create timestamp on Windows
+    ###################################################################
+  - name: Generate timestamp on the Windows host
+    ansible.windows.win_shell: |
+      (Get-Date).ToString('yyyy-MM-dd_HH-mm')
+    register: stig_timestamp_raw
+
+  - name: Set timestamp fact
+    set_fact:
+      stig_timestamp: "{{ stig_timestamp_raw.stdout | trim }}"
 
     ###################################################################
-    # Ensure Evaluate-STIG.ps1 exists
+    # Create results directory with timestamp on SMB share
     ###################################################################
-    - name: Ensure Evaluate-STIG.ps1 exists
-      ansible.windows.win_stat:
-        path: "{{ stig_script_path }}"
-      register: stig_script_check
-
-    - name: ❌ Fail if Evaluate-STIG.ps1 is missing
-      ansible.builtin.fail:
-        msg: "Evaluate-STIG.ps1 is missing on {{ inventory_hostname }}. Run prep-stig-host first."
-      when: not stig_script_check.stat.exists
+  - name: Create timestamp subfolder on SMB share
+    ansible.windows.win_file:
+      path: "{{ smb_share }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}"
+      state: directory
 
     ###################################################################
-    # Run Evaluate-STIG scan
+    # Upload STIG results to timestamped folder
     ###################################################################
-    - name: ▶️ Run Evaluate-STIG scan (CKL + CSV)
-      ansible.windows.win_shell: |
-        powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "{{ stig_script_path }}" -OutputPath "{{ stig_output_path }}"
-      register: stig_scan_output
-      changed_when: true
-
-    ###################################################################
-    # Generate timestamp on Windows
-    ###################################################################
-    - name: Generate timestamp on the Windows host
-      ansible.windows.win_shell: |
-        (Get-Date).ToString('yyyy-MM-dd_HH-mm')
-      register: stig_timestamp_raw
-
-    - name: Set timestamp fact
-      set_fact:
-        stig_timestamp: "{{ stig_timestamp_raw.stdout | trim }}"
-
-    ###################################################################
-    # Map SMB share (if credentials required)
-    ###################################################################
-    - name: Map SMB Share (if needed)
-      ansible.windows.win_command: |
-        net use \\{{ stig_results_smb_path }} /USER:{{ smb_user }} {{ smb_pass }} /PERSISTENT:NO
-      no_log: true
-      when:
-        - smb_user is defined
-        - smb_pass is defined
-
-    ###################################################################
-    # Create Timestamp Directory
-    ###################################################################
-    - name: Create timestamp results folder on SMB share
-      ansible.windows.win_file:
-        path: "\\\\{{ stig_results_smb_path }}\\{{ role_name }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}"
-        state: directory
-
-    ###################################################################
-    # Copy Results to SMB Share
-    ###################################################################
-    - name: Copy CKL + CSV results to SMB share
-      ansible.windows.win_copy:
-        src: "{{ stig_output_path }}\\"
-        dest: "\\\\{{ stig_results_smb_path }}\\{{ role_name }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}\\"
-        remote_src: yes
-
-    ###################################################################
-    # Completion message
-    ###################################################################
-    - name: ✅ Completed
-      ansible.builtin.debug:
-        msg: "STIG results uploaded for {{ inventory_hostname }} to \\\\{{ stig_results_smb_path }}\\{{ role_name }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}"
+  - name: Upload STIG results (CKL + CSV) to SMB share
+    ansible.windows.win_copy:
+      src: "C:\\path\\to\\results\\{{ inventory_hostname }}_*.{ckl,csv}"
+      dest: "{{ smb_share }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}\\"
+      remote_src: yes
