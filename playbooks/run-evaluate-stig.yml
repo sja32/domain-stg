@@ -45,38 +45,25 @@
         Write-Host "✅ STIG scan complete."
       args:
         executable: PowerShell.exe
+###################################################################
+# Create timestamp on Windows
+###################################################################
+- name: Generate timestamp on the Windows host
+  ansible.windows.win_shell: |
+    (Get-Date).ToString('yyyy-MM-dd_HH-mm')
+  register: stig_timestamp_raw
 
-    ###################################################################
-    # Create Timestamp Directory
-    ###################################################################
-    - name: Create timestamp subfolder locally
-      ansible.windows.win_shell: |
-        $target = "{{ stig_results }}\\{{ timestamp }}"
-        if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target | Out-Null }
-      args:
-        executable: PowerShell.exe
+- name: Set timestamp fact
+  set_fact:
+    stig_timestamp: "{{ stig_timestamp_raw.stdout | trim }}"
 
-    ###################################################################
-    # Create Role + Hostname + Timestamp folder on SMB Share
-    ###################################################################
-    - name: Create folder on SMB Share for results
-      ansible.windows.win_shell: |
-        $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential -ArgumentList "{{ ansible_user }}", $sec
-
-        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
-
-        $rolePath = "R:\\{{ stig_role_folder }}"
-        $hostPath = "$rolePath\\{{ inventory_hostname }}"
-        $timePath = "$hostPath\\{{ timestamp }}"
-
-        if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath | Out-Null }
-        if (-not (Test-Path $hostPath)) { New-Item -ItemType Directory -Path $hostPath | Out-Null }
-        if (-not (Test-Path $timePath)) { New-Item -ItemType Directory -Path $timePath | Out-Null }
-
-        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
-      args:
-        executable: PowerShell.exe
+###################################################################
+# Create results directory with timestamp
+###################################################################
+- name: Create timestamp subfolder on SMB share
+  ansible.windows.win_file:
+    path: "\\\\192.168.10.50\\stig-results\\{{ inventory_hostname }}\\{{ stig_timestamp }}"
+    state: directory
 
     ###################################################################
     # Upload Results to SMB Share under Timestamp
