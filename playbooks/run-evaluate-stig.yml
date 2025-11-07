@@ -1,27 +1,21 @@
 ---
-- name: Run Evaluate-STIG with Console + CKL + CSV Export
+- name: Run Evaluate-STIG and produce CKL + CSV outputs
   hosts: all
   gather_facts: no
 
   vars:
-    stig_version: "Evaluate-STIG_1.2507.5"
-    stig_local_path: "C:\\ProgramData\\{{ stig_version }}"
-    stig_results_local: "C:\\Users\\Public\\Documents\\STIG_Compliance"
+    stig_local_path: "{{ stig_local_path | default('C:\\ProgramData\\Evaluate-STIG_1.2507.5') }}"
+    stig_results_local: "{{ stig_results_local | default('C:\\Users\\Public\\Documents\\STIG_Compliance') }}"
 
   tasks:
 
-    - name: ▶️ Run Evaluate-STIG (Console Mode + Export CKL + CSV)
+    - name: ▶️ Run Evaluate-STIG with CKL + CSV export
       ansible.windows.win_powershell:
         script: |
-          Write-Host "Running Evaluate-STIG in Console Mode..."
-          & "{{ stig_local_path }}\\Evaluate-STIG.ps1" `
-            -Console `
-            -Output CKL,CSV `
-            -OutputPath "{{ stig_results_local }}"
-        error_action: stop
-      args:
-        executable: PowerShell.exe
+          Write-Host "Running Evaluate-STIG..."
+          & "{{ stig_local_path }}\\Evaluate-STIG.ps1" -Output "CKL,CSV" -OutputPath "{{ stig_results_local }}"
+      register: stig_run
 
-    - name: ✅ Completed Scan
+    - name: ✅ Print STIG execution result
       ansible.builtin.debug:
-        msg: "STIG scan completed and results exported on {{ inventory_hostname }}"
+        var: stig_run.stdout_lines
