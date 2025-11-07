@@ -1,6 +1,6 @@
 ---
 - name: Run Evaluate-STIG scan and upload results
-  hosts: windows
+  hosts: domain_controllers
   gather_facts: false
 
   vars:
@@ -13,13 +13,13 @@
     # Network SMB share to upload results to
     stig_results_smb_path: "192.168.10.50\\stig-results"
 
-    # The role (group/category) these hosts represent (override in inventory if desired)
+    # The role/group this Windows system represents
     role_name: "Windows-Server"
 
   tasks:
 
     ###################################################################
-    # Ensure Evaluate-STIG.ps1 exists
+    # Ensure Evaluate-STIG.ps1 exists before running
     ###################################################################
     - name: Ensure Evaluate-STIG.ps1 exists
       ansible.windows.win_stat:
@@ -32,7 +32,7 @@
       when: not stig_script_check.stat.exists
 
     ###################################################################
-    # Run Evaluate-STIG scan
+    # Run Evaluate-STIG
     ###################################################################
     - name: ▶️ Run Evaluate-STIG scan (CKL + CSV)
       ansible.windows.win_shell: |
@@ -41,7 +41,7 @@
       changed_when: true
 
     ###################################################################
-    # Generate timestamp on Windows
+    # Generate timestamp on the Windows host
     ###################################################################
     - name: Generate timestamp on the Windows host
       ansible.windows.win_shell: |
@@ -53,7 +53,7 @@
         stig_timestamp: "{{ stig_timestamp_raw.stdout | trim }}"
 
     ###################################################################
-    # Create timestamp directory on SMB share
+    # Create timestamp folder on SMB share
     ###################################################################
     - name: Create timestamp results folder on SMB share
       ansible.windows.win_file:
@@ -61,7 +61,7 @@
         state: directory
 
     ###################################################################
-    # Copy CKL + CSV results to SMB share
+    # Copy results to SMB share
     ###################################################################
     - name: Upload STIG results to timestamped folder
       ansible.windows.win_copy:
@@ -74,4 +74,4 @@
     ###################################################################
     - name: ✅ Completed
       ansible.builtin.debug:
-        msg: "STIG results uploaded: \\\\{{ stig_results_smb_path }}\\{{ role_name }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}"
+        msg: "STIG results uploaded: \\\\{{ stig_results_s
