@@ -4,15 +4,20 @@
   gather_facts: false
 
   vars:
-    stig_script_path: 'C:\ProgramData\Evaluate-STIG\Evaluate-STIG.ps1'
-    stig_output_path: 'C:\ProgramData\Evaluate-STIG\Results'
+    # Correct actual installation path
+    stig_script_path: 'C:\ProgramData\Evaluate-STIG_1.2507.5\Evaluate-STIG.ps1'
+    stig_output_path: 'C:\ProgramData\Evaluate-STIG_1.2507.5\Results'
+
+    # SMB share where results are uploaded
     stig_results_smb_path: '\\192.168.10.50\stig-results'
-    role_name: 'Windows-Server'
+
+    # Result grouping folder for this run
+    role_name: 'Domain-Controllers'
 
   tasks:
 
     ###################################################################
-    # Ensure Evaluate-STIG.ps1 exists
+    # Ensure Evaluate-STIG exists before executing
     ###################################################################
     - name: Ensure Evaluate-STIG.ps1 exists
       ansible.windows.win_stat:
@@ -21,11 +26,11 @@
 
     - name: ❌ Fail if Evaluate-STIG.ps1 is missing
       ansible.builtin.fail:
-        msg: "Evaluate-STIG.ps1 is missing on {{ inventory_hostname }}. Run prep-stig-host first."
+        msg: "Evaluate-STIG.ps1 is missing on {{ inventory_hostname }}."
       when: not stig_script_check.stat.exists
 
     ###################################################################
-    # Run Evaluate-STIG scan
+    # Run Evaluate-STIG scan to produce CKL + CSV files
     ###################################################################
     - name: ▶️ Run Evaluate-STIG scan (CKL + CSV)
       ansible.windows.win_shell: >
@@ -36,28 +41,28 @@
       changed_when: true
 
     ###################################################################
-    # Generate timestamp
+    # Generate timestamp for organized results folder
     ###################################################################
-    - name: Generate timestamp
+    - name: Generate timestamp on Windows host
       ansible.windows.win_shell: "(Get-Date).ToString('yyyy-MM-dd_HH-mm')"
       register: stig_timestamp_raw
 
-    - name: Store timestamp
+    - name: Store timestamp fact
       set_fact:
         stig_timestamp: "{{ stig_timestamp_raw.stdout | trim }}"
 
     ###################################################################
-    # Create result folder
+    # Create timestamp directory on SMB share
     ###################################################################
-    - name: Create timestamp directory
+    - name: Create timestamp results folder on SMB share
       ansible.windows.win_file:
         path: "{{ stig_results_smb_path }}\\{{ role_name }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}"
         state: directory
 
     ###################################################################
-    # Upload results
+    # Copy STIG Results (CKL + CSV) to SMB share
     ###################################################################
-    - name: Upload STIG results
+    - name: Upload STIG results to timestamped folder
       ansible.windows.win_copy:
         src: "{{ stig_output_path }}\\"
         dest: "{{ stig_results_smb_path }}\\{{ role_name }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}\\"
@@ -66,8 +71,8 @@
     ###################################################################
     # Done
     ###################################################################
-    - name: ✅ Completed
+    - name: ✅ Report complete
       ansible.builtin.debug:
         msg: >
-          STIG results uploaded to:
+          Results uploaded to:
           {{ stig_results_smb_path }}\{{ role_name }}\{{ inventory_hostname }}\{{ stig_timestamp }}
