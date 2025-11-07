@@ -64,9 +64,9 @@
         executable: PowerShell.exe
 
     ###################################################################
-    # Upload Results
+    # Upload Results (Only the newest Checklist folder)
     ###################################################################
-        - name: Upload latest STIG results to share
+    - name: Upload latest STIG results to share
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
@@ -86,6 +86,7 @@
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
+
 
 
     ###################################################################
