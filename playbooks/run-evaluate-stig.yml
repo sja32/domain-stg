@@ -1,58 +1,32 @@
 ---
-- name: Run Evaluate-STIG with Export + Upload to Results Share
+- name: Run Evaluate-STIG with Evidence + CKL + CSV Export
   hosts: all
   gather_facts: no
 
   vars:
+    # Version folder name must match what was copied during prep
     stig_version: "Evaluate-STIG_1.2507.5"
+
+    # Path where Evaluate-STIG lives
     stig_local_path: "C:\\ProgramData\\{{ stig_version }}"
+
+    # Local export location for evidence + results
     stig_results_local: "C:\\Users\\Public\\Documents\\STIG_Compliance"
-    results_share_root: "\\\\192.168.10.198\\stig-results"
 
   tasks:
 
-    - name: ▶️ Attempt STIG Scan (try #1)
+    - name: ▶️ Run Evaluate-STIG (NonInteractive + CKL + CSV)
       ansible.windows.win_powershell:
         script: |
-          try {
-            & "{{ stig_local_path }}\\Evaluate-STIG.ps1" -NonInteractive -EvidenceFolder "{{ stig_results_local }}"
-          } catch {
-            Write-Host "Scan failed — will retry after unblock."
-            throw
-          }
-      register: stig_run
-      failed_when: false
+          Write-Host "Running Evaluate-STIG..."
+          & "{{ stig_local_path }}\\Evaluate-STIG.ps1" `
+            -NonInteractive `
+            -EvidenceFolder "{{ stig_results_local }}" `
+            -Output CKL,CSV
+        error_action: stop
+      args:
+        executable: PowerShell.exe
 
-    - name: 🔄 If failed — unblock files, then retry scan
-      ansible.windows.win_powershell:
-        script: |
-          Write-Host "Unblocking Evaluate-STIG files..."
-          Get-ChildItem "{{ stig_local_path }}" -Recurse | Unblock-File -ErrorAction SilentlyContinue
-          Write-Host "Retrying STIG scan..."
-          & "{{ stig_local_path }}\\Evaluate-STIG.ps1" -NonInteractive -EvidenceFolder "{{ stig_results_local }}"
-      when: stig_run.rc != 0
-
-    - name: 🗂 Create remote results folder (hostname + timestamp)
-      ansible.windows.win_powershell:
-        script: |
-          $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm"
-          $dest = "{{ results_share_root }}\\{{ inventory_hostname }}\\$timestamp"
-          New-Item -ItemType Directory -Path $dest -Force | Out-Null
-          Write-Output $dest
-      register: results_dest
-
-    - name: 📤 Copy results to central NAS (using AWX creds)
-      ansible.windows.win_powershell:
-        script: |
-          $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
-
-          New-PSDrive -Name R -PSProvider FileSystem -Root "{{ results_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
-
-          Copy-Item "{{ stig_results_local }}\\*" "R:\\{{ inventory_hostname }}\\$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -Recurse -Force
-
-          Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
-
-    - name: ✅ Done
+    - name: ✅ Completed Scan
       ansible.builtin.debug:
-        msg: "STIG scan + results export + upload complete for {{ inventory_hostname }}"
+        msg: "STIG scan completed and results exported on {{ inventory_hostname }}"
