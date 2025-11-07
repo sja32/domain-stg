@@ -4,23 +4,34 @@
   gather_facts: no
 
   vars:
+    # Local Evaluate-STIG install location
     stig_workdir: "C:\\ProgramData\\Evaluate-STIG_1.2507.5"
+
+    # STIG results path created by Evaluate-STIG
     stig_results: "C:\\Users\\Public\\Documents\\STIG_Compliance"
+
+    # SMB Share root where results go
     smb_share_root: "\\\\192.168.10.198\\stig-results"
+
+    # Group-level variable from AWX (i.e., Domain-Controllers, Member-Servers, Workstations)
+    stig_role_folder: "{{ stig_role_folder | default('Uncategorized') }}"
+
+    # Timestamp format
+    timestamp: "{{ lookup('pipe', 'powershell -NoLogo -NoProfile -Command \"(Get-Date).ToString(\\'yyyy-MM-dd_HH-mm\\')\"') }}"
 
   tasks:
 
     ###################################################################
-    # Verify Evaluate-STIG Exists
+    # Ensure Evaluate-STIG.ps1 Exists
     ###################################################################
     - name: Ensure Evaluate-STIG.ps1 exists
       ansible.windows.win_stat:
         path: "{{ stig_workdir }}\\Evaluate-STIG.ps1"
       register: stig_ps1
 
-    - name: ❌ Fail if Evaluate-STIG.ps1 not found
+    - name: ❌ Fail if Evaluate-STIG.ps1 is missing
       ansible.builtin.fail:
-        msg: "Evaluate-STIG.ps1 not found in {{ stig_workdir }} — run prep first."
+        msg: "Evaluate-STIG.ps1 not found — run prep first."
       when: not stig_ps1.stat.exists
 
     ###################################################################
@@ -34,60 +45,61 @@
         Write-Host "✅ STIG scan complete."
       args:
         executable: PowerShell.exe
-      register: stig_scan
-      failed_when: false
 
     ###################################################################
-    # Ensure local results folder exists
+    # Create Timestamp Directory
     ###################################################################
-    - name: Ensure local results directory exists
-      ansible.windows.win_file:
-        path: "{{ stig_results }}"
-        state: directory
-    
+    - name: Create timestamp subfolder locally
+      ansible.windows.win_shell: |
+        $target = "{{ stig_results }}\\{{ timestamp }}"
+        if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target | Out-Null }
+      args:
+        executable: PowerShell.exe
+
     ###################################################################
-    # Create role + hostname folder on SMB share
+    # Create Role + Hostname + Timestamp folder on SMB Share
     ###################################################################
-    - name: Create role + hostname folder on SMB share
+    - name: Create folder on SMB Share for results
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+        $cred = New-Object System.Management.Automation.PSCredential -ArgumentList "{{ ansible_user }}", $sec
 
         New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
-        $rolePath = "R:\{{ stig_role_folder }}"
-        $hostPath = "$rolePath\{{ inventory_hostname }}"
+        $rolePath = "R:\\{{ stig_role_folder }}"
+        $hostPath = "$rolePath\\{{ inventory_hostname }}"
+        $timePath = "$hostPath\\{{ timestamp }}"
 
         if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath | Out-Null }
         if (-not (Test-Path $hostPath)) { New-Item -ItemType Directory -Path $hostPath | Out-Null }
+        if (-not (Test-Path $timePath)) { New-Item -ItemType Directory -Path $timePath | Out-Null }
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
 
-
     ###################################################################
-    # Upload Results using the role folder + host folder
+    # Upload Results to SMB Share under Timestamp
     ###################################################################
-    - name: Upload STIG results to role/hostname path
+    - name: Upload STIG results to timestamped folder
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+        $cred = New-Object System.Management.Automation.PSCredential -ArgumentList "{{ ansible_user }}", $sec
 
         New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
-        $dest = "R:\{{ stig_role_folder }}\{{ inventory_hostname }}"
-        Copy-Item "{{ stig_results }}\*" $dest -Recurse -Force
+        $dest = "R:\\{{ stig_role_folder }}\\{{ inventory_hostname }}\\{{ timestamp }}"
+        Copy-Item "{{ stig_results }}\\*" $dest -Recurse -Force
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
 
     ###################################################################
-    # Summary
+    # Summary Output
     ###################################################################
     - name: ✅ Summary
       debug:
         msg:
           - "✅ STIG Scan completed on {{ inventory_hostname }}"
-          - "📤 Results uploaded to: {{ smb_share_root }}\\{{ inventory_hostname }}"
+          - "📤 Results uploaded to: {{ smb_share_root }}\\{{ stig_role_folder }}\\{{ inventory_hostname }}\\{{ timestamp }}"
