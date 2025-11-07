@@ -4,23 +4,18 @@
   gather_facts: no
 
   vars:
-    # Version folder name must match what was copied during prep
     stig_version: "Evaluate-STIG_1.2507.5"
-
-    # Path where Evaluate-STIG lives
     stig_local_path: "C:\\ProgramData\\{{ stig_version }}"
-
-    # Local export location for evidence + results
     stig_results_local: "C:\\Users\\Public\\Documents\\STIG_Compliance"
 
   tasks:
 
-    - name: ▶️ Run Evaluate-STIG (NonInteractive + CKL + CSV)
+    - name: ▶️ Run Evaluate-STIG (Silent + Output CKL + CSV)
       ansible.windows.win_powershell:
         script: |
           Write-Host "Running Evaluate-STIG..."
           & "{{ stig_local_path }}\\Evaluate-STIG.ps1" `
-            -NonInteractive `
+            -Silent `
             -EvidenceFolder "{{ stig_results_local }}" `
             -Output CKL,CSV
         error_action: stop
