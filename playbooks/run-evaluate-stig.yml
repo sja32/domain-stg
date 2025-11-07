@@ -66,18 +66,27 @@
     ###################################################################
     # Upload Results
     ###################################################################
-    - name: Upload STIG results to share
+        - name: Upload latest STIG results to share
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
 
         New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
-        Copy-Item "{{ stig_results }}\\*" "R:\{{ inventory_hostname }}" -Recurse -Force
+        $src = Join-Path "{{ stig_results }}" "{{ inventory_hostname }}\Checklist"
+        $dest = "R:\{{ inventory_hostname }}"
+
+        if (Test-Path $src) {
+            Copy-Item "$src\*" $dest -Recurse -Force
+            Write-Host "✅ Copied results from $src to $dest"
+        } else {
+            Write-Host "⚠️ No Checklist results folder found at: $src"
+        }
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
+
 
     ###################################################################
     # Summary
