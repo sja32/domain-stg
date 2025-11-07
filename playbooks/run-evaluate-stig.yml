@@ -48,20 +48,25 @@
     ###################################################################
     # Create per-host folder on SMB Share
     ###################################################################
-    - name: Create hostname folder on SMB share
+       - name: Create hostname folder on SMB share
       ansible.windows.win_shell: |
-        $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+        $sec = ConvertTo-SecureString '{{ ansible_password }}' -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ('{{ ansible_user }}', $sec)
 
-        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+        New-PSDrive -Name R -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
 
-        if (-not (Test-Path "R:\{{ inventory_hostname }}")) {
-            New-Item -ItemType Directory -Path "R:\{{ inventory_hostname }}" | Out-Null
+        if (-not (Test-Path "R:\{{ stig_role_folder }}")) {
+            New-Item -ItemType Directory -Path "R:\{{ stig_role_folder }}" | Out-Null
+        }
+
+        if (-not (Test-Path "R:\{{ stig_role_folder }}\{{ inventory_hostname }}")) {
+            New-Item -ItemType Directory -Path "R:\{{ stig_role_folder }}\{{ inventory_hostname }}" | Out-Null
         }
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
+
 
     ###################################################################
     # Upload Results (Only the newest Checklist folder)
