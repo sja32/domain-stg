@@ -4,22 +4,15 @@
   gather_facts: false
 
   vars:
-    # Where the Evaluate-STIG script lives on the Windows host
-    stig_script_path: "C:\\ProgramData\\Evaluate-STIG\\Evaluate-STIG.ps1"
-
-    # Local results output directory on the Windows host
-    stig_output_path: "C:\\ProgramData\\Evaluate-STIG\\Results"
-
-    # Network SMB share to upload results to
-    stig_results_smb_path: "192.168.10.50\\stig-results"
-
-    # The role/group this Windows system represents
-    role_name: "Windows-Server"
+    stig_script_path: 'C:\ProgramData\Evaluate-STIG\Evaluate-STIG.ps1'
+    stig_output_path: 'C:\ProgramData\Evaluate-STIG\Results'
+    stig_results_smb_path: '\\192.168.10.50\stig-results'
+    role_name: 'Windows-Server'
 
   tasks:
 
     ###################################################################
-    # Ensure Evaluate-STIG.ps1 exists before running
+    # Ensure Evaluate-STIG.ps1 exists
     ###################################################################
     - name: Ensure Evaluate-STIG.ps1 exists
       ansible.windows.win_stat:
@@ -32,46 +25,49 @@
       when: not stig_script_check.stat.exists
 
     ###################################################################
-    # Run Evaluate-STIG
+    # Run Evaluate-STIG scan
     ###################################################################
     - name: ▶️ Run Evaluate-STIG scan (CKL + CSV)
-      ansible.windows.win_shell: |
-        powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "{{ stig_script_path }}" -OutputPath "{{ stig_output_path }}"
+      ansible.windows.win_shell: >
+        powershell -NoLogo -NoProfile -ExecutionPolicy Bypass
+        -File "{{ stig_script_path }}"
+        -OutputPath "{{ stig_output_path }}"
       register: stig_scan_output
       changed_when: true
 
     ###################################################################
-    # Generate timestamp on the Windows host
+    # Generate timestamp
     ###################################################################
-    - name: Generate timestamp on the Windows host
-      ansible.windows.win_shell: |
-        (Get-Date).ToString('yyyy-MM-dd_HH-mm')
+    - name: Generate timestamp
+      ansible.windows.win_shell: "(Get-Date).ToString('yyyy-MM-dd_HH-mm')"
       register: stig_timestamp_raw
 
-    - name: Set timestamp fact
+    - name: Store timestamp
       set_fact:
         stig_timestamp: "{{ stig_timestamp_raw.stdout | trim }}"
 
     ###################################################################
-    # Create timestamp folder on SMB share
+    # Create result folder
     ###################################################################
-    - name: Create timestamp results folder on SMB share
+    - name: Create timestamp directory
       ansible.windows.win_file:
-        path: "\\\\{{ stig_results_smb_path }}\\{{ role_name }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}"
+        path: "{{ stig_results_smb_path }}\\{{ role_name }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}"
         state: directory
 
     ###################################################################
-    # Copy results to SMB share
+    # Upload results
     ###################################################################
-    - name: Upload STIG results to timestamped folder
+    - name: Upload STIG results
       ansible.windows.win_copy:
         src: "{{ stig_output_path }}\\"
-        dest: "\\\\{{ stig_results_smb_path }}\\{{ role_name }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}\\"
+        dest: "{{ stig_results_smb_path }}\\{{ role_name }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}\\"
         remote_src: yes
 
     ###################################################################
-    # Completion message
+    # Done
     ###################################################################
     - name: ✅ Completed
       ansible.builtin.debug:
-        msg: "STIG results uploaded: \\\\{{ stig_results_s
+        msg: >
+          STIG results uploaded to:
+          {{ stig_results_smb_path }}\{{ role_name }}\{{ inventory_hostname }}\{{ stig_timestamp }}
