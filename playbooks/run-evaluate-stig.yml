@@ -1,5 +1,5 @@
 ---
-- name: Run Evaluate-STIG with Evidence + CKL + CSV Export
+- name: Run Evaluate-STIG with Console + CKL + CSV Export
   hosts: all
   gather_facts: no
 
@@ -10,14 +10,14 @@
 
   tasks:
 
-    - name: ▶️ Run Evaluate-STIG (Silent + Output CKL + CSV)
+    - name: ▶️ Run Evaluate-STIG (Console Mode + Export CKL + CSV)
       ansible.windows.win_powershell:
         script: |
-          Write-Host "Running Evaluate-STIG..."
+          Write-Host "Running Evaluate-STIG in Console Mode..."
           & "{{ stig_local_path }}\\Evaluate-STIG.ps1" `
-            -Silent `
-            -EvidenceFolder "{{ stig_results_local }}" `
-            -Output CKL,CSV
+            -Console `
+            -Output CKL,CSV `
+            -OutputPath "{{ stig_results_local }}"
         error_action: stop
       args:
         executable: PowerShell.exe
