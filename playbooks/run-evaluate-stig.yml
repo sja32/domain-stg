@@ -44,55 +44,44 @@
       ansible.windows.win_file:
         path: "{{ stig_results }}"
         state: directory
-
+    
     ###################################################################
-    # Create per-host folder on SMB Share
+    # Create role + hostname folder on SMB share
     ###################################################################
-       - name: Create hostname folder on SMB share
-      ansible.windows.win_shell: |
-        $sec = ConvertTo-SecureString '{{ ansible_password }}' -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ('{{ ansible_user }}', $sec)
-
-        New-PSDrive -Name R -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
-
-        if (-not (Test-Path "R:\{{ stig_role_folder }}")) {
-            New-Item -ItemType Directory -Path "R:\{{ stig_role_folder }}" | Out-Null
-        }
-
-        if (-not (Test-Path "R:\{{ stig_role_folder }}\{{ inventory_hostname }}")) {
-            New-Item -ItemType Directory -Path "R:\{{ stig_role_folder }}\{{ inventory_hostname }}" | Out-Null
-        }
-
-        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
-      args:
-        executable: PowerShell.exe
-
-
-    ###################################################################
-    # Upload Results (Only the newest Checklist folder)
-    ###################################################################
-    - name: Upload latest STIG results to share
+    - name: Create role + hostname folder on SMB share
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
 
         New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
-        $src = Join-Path "{{ stig_results }}" "{{ inventory_hostname }}\Checklist"
-        $dest = "R:\{{ inventory_hostname }}"
+        $rolePath = "R:\{{ stig_role_folder }}"
+        $hostPath = "$rolePath\{{ inventory_hostname }}"
 
-        if (Test-Path $src) {
-            Copy-Item "$src\*" $dest -Recurse -Force
-            Write-Host "✅ Copied results from $src to $dest"
-        } else {
-            Write-Host "⚠️ No Checklist results folder found at: $src"
-        }
+        if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath | Out-Null }
+        if (-not (Test-Path $hostPath)) { New-Item -ItemType Directory -Path $hostPath | Out-Null }
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
 
 
+    ###################################################################
+    # Upload Results using the role folder + host folder
+    ###################################################################
+    - name: Upload STIG results to role/hostname path
+      ansible.windows.win_shell: |
+        $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+
+        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+
+        $dest = "R:\{{ stig_role_folder }}\{{ inventory_hostname }}"
+        Copy-Item "{{ stig_results }}\*" $dest -Recurse -Force
+
+        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+      args:
+        executable: PowerShell.exe
 
     ###################################################################
     # Summary
