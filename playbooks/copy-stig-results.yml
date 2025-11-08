@@ -1,7 +1,7 @@
 ---
-- name: Copy latest Evaluate-STIG results to central share
+- name: Copy Evaluate-STIG results to central share
   hosts: all
-  gather_facts: no
+  gather_facts: yes  # REQUIRED for ansible_hostname
 
   vars:
     stig_results_root: "C:\\Users\\Public\\Documents\\STIG_Compliance"
@@ -10,21 +10,48 @@
 
   tasks:
 
-    # --------------------------------------------------------------
-    # Identify the latest timestamp folder under host results
-    # --------------------------------------------------------------
-    - name: Identify latest timestamp directory
+    - name: Ensure host has a Checklist folder
+      ansible.windows.win_stat:
+        path: "{{ stig_results_root }}\\{{ ansible_hostname }}\\Checklist"
+      register: checklist_dir
+
+    - name: Fail if no STIG results exist
+      ansible.builtin.fail:
+        msg: "No Checklist folder found for {{ ansible_hostname }} — run Evaluate-STIG first."
+      when: not checklist_dir.stat.exists
+
+    - name: Create destination directory on SMB share
       ansible.windows.win_shell: |
-        Get-ChildItem "{{ stig_results_root }}\\{{ inventory_hostname }}" -Directory |
-        Sort-Object Name -Descending |
-        Select-Object -First 1 |
-        Select-Object -ExpandProperty Name
+        $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
+        $cred = New-Object PSCredential "{{ smb_user }}", $sec
+
+        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+
+        $dest = "R:\\{{ stig_role_folder }}\\{{ ansible_hostname }}\\Checklist"
+        if (-not (Test-Path $dest)) { New-Item -Path $dest -ItemType Directory -Force | Out-Null }
+
+        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: powershell.exe
-      register: timestamp_result
-      changed_when: false
 
-    - name: Fail if timestamp directory not found
-      ansible.builtin.fail:
-        msg: "No results found for this host. Run STIG scan first."
-      when: ti
+    - name: Copy Checklist folder to central share
+      ansible.windows.win_shell: |
+        $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
+        $cred = New-Object PSCredential "{{ smb_user }}", $sec
+
+        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+
+        $source = "{{ stig_results_root }}\\{{ ansible_hostname }}\\Checklist"
+        $dest = "R:\\{{ stig_role_folder }}\\{{ ansible_hostname }}\\Checklist"
+
+        Copy-Item "$source\\*" "$dest" -Recurse -Force
+
+        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+      args:
+        executable: powershell.exe
+
+    - name: ✅ Summary
+      debug:
+        msg:
+          - "Results successfully copied for {{ ansible_hostname }}"
+          - "Location: {{ smb_share_root }}\\{{ stig_role_folder }}\\{{ ansible_hostname }}\\Checklist"
