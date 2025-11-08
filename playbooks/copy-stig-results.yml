@@ -4,7 +4,8 @@
   gather_facts: no
 
   vars:
-    stig_results_dir: "C:\\Users\\Public\\Documents\\STIG_Compliance\\{{ inventory_hostname }}\\Checklist"
+    stig_results_dir: stig_results_dir: "C:\\Users\\Public\\Documents\\STIG_Compliance\\{{ ansible_hostname }}\\Checklist"
+
     smb_share_root: "\\\\192.168.10.198\\stig-results"
 
     # Value comes from AWX group variable (Example: "Domain-Controllers")
@@ -64,7 +65,7 @@
 
         New-PSDrive -Name R -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
 
-        Copy-Item "{{ stig_results_dir }}\\*" "R:\\{{ stig_role_folder }}\\{{ inventory_hostname }}\\{{ copy_timestamp }}" -Recurse -Force
+        Copy-Item "{{ stig_results_dir }}\\*" "R:\\{{ stig_role_folder }}\\{{ ansible_hostname }}\\{{ copy_timestamp }}" -Recurse -Force
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
