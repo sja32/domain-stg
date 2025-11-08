@@ -1,10 +1,11 @@
 ---
 - name: Copy Evaluate-STIG results to central share
   hosts: all
-  gather_facts: no
+  gather_facts: yes   # <-- Needed so ansible_hostname is available
+
   vars:
-    stig_results_source: "C:\\Users\\Public\\Documents\\STIG_Compliance\\$env:COMPUTERNAME\\Checklist"
-    stig_results_dest: "\\\\192.168.10.198\\STIG-Results\\$env:COMPUTERNAME"
+    stig_results_source: "C:\\Users\\Public\\Documents\\STIG_Compliance\\{{ ansible_hostname }}\\Checklist"
+    stig_results_dest: "\\\\192.168.10.198\\STIG-Results\\{{ ansible_hostname }}"
 
   tasks:
 
@@ -26,21 +27,12 @@
 
     - name: Map SMB share
       ansible.windows.win_shell: |
-        net use {{ stig_results_dest }} /user:{{ smb_username }} "{{ smb_password }}"
+        net use "{{ stig_results_dest }}" /user:"{{ smb_username }}" "{{ smb_password }}"
       register: map_share
       changed_when: "'The command completed successfully' in map_share.stdout"
       args:
         executable: powershell.exe
 
-    - name: Copy results (robocopy incremental sync)
+    - name: Copy results into share
       ansible.windows.win_shell: |
-        robocopy "{{ stig_results_source }}" "{{ stig_results_dest }}" /E /Z /R:2 /W:1 /NFL /NDL
-      args:
-        executable: powershell.exe
-
-    - name: Unmap SMB share
-      ansible.windows.win_shell: |
-        net use {{ stig_results_dest }} /delete /y
-      ignore_errors: true
-      args:
-        executable: powershell.exe
+        robocopy "{{ stig_results_source }}" "{{ stig_re_
