@@ -4,27 +4,17 @@
   gather_facts: yes
 
   vars:
-    # Where Evaluate-STIG is installed
     stig_workdir: 'C:\ProgramData\Evaluate-STIG_1.2507.5'
-
-    # Where results are written
     stig_results_root: 'C:\Users\Public\Documents\STIG_Compliance'
 
-    # Root of your Windows file server share
     share_root: '\\192.168.10.198\STIG-Results'
-
-    # AWX group var (ex: Domain-Controllers, Member-Servers, Workstations)
     role_folder: "{{ stig_role_folder | default('Domain-Controllers') }}"
 
-    # Credential injected from AWX custom credential
     smb_user_effective: "{{ smb_user | default(smb_username) }}"
     smb_pass_effective: "{{ smb_pass | default(smb_password) }}"
 
   tasks:
 
-    # ---------------------------------------------------------
-    # Ensure Evaluate-STIG is present
-    # ---------------------------------------------------------
     - name: Ensure Evaluate-STIG.ps1 exists
       ansible.windows.win_stat:
         path: "{{ stig_workdir }}\\Evaluate-STIG.ps1"
@@ -35,9 +25,7 @@
         msg: "Evaluate-STIG.ps1 not found — run prep first."
       when: not stig_ps1.stat.exists
 
-    # ---------------------------------------------------------
-    # Run Evaluate-STIG
-    # ---------------------------------------------------------
+
     - name: Run Evaluate-STIG (CKL + CSV)
       ansible.windows.win_shell: |
         Write-Host "Running Evaluate-STIG..."
@@ -46,17 +34,15 @@
       args:
         executable: PowerShell.exe
 
-    # ---------------------------------------------------------
-    # Copy results to central share
-    # ---------------------------------------------------------
+
     - name: Copy STIG results to central share
       ansible.windows.win_shell: |
         $srcRoot = "{{ stig_results_root }}"
         $hostName = $env:COMPUTERNAME
-        $srcChecklist = Join-Path -Path (Join-Path -Path $srcRoot -ChildPath $hostName) -ChildPath "Checklist"
+        $srcChecklist = Join-Path (Join-Path $srcRoot $hostName) "Checklist"
 
         if (-not (Test-Path $srcChecklist)) {
-          throw "❌ No STIG results found at $srcChecklist"
+          throw "No Evaluate-STIG results found at $srcChecklist"
         }
 
         $sec  = ConvertTo-SecureString "{{ smb_pass_effective }}" -AsPlainText -Force
@@ -73,15 +59,14 @@
         Copy-Item -Path "$srcChecklist\*" -Destination $destHost -Recurse -Force
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
-        Write-Host "✅ Results copied to {{ share_root }}\\{{ role_folder }}\\$hostName"
+
+        Write-Host "✅ Results copied to {{ share_root }}\{{ role_folder }}\$hostName"
       args:
         executable: PowerShell.exe
 
-    # ---------------------------------------------------------
-    # Summary
-    # ---------------------------------------------------------
+
     - name: ✅ Summary
       debug:
         msg:
-          - "Scan complete on {{ inventory_hostname }}"
+          - "Scan completed on {{ inventory_hostname }}"
           - "Results copied to: {{ share_root }}\\{{ role_folder }}\\{{ ansible_env.COMPUTERNAME }}"
