@@ -10,10 +10,10 @@
 
   tasks:
 
-    ###################################################################
-    # Identify latest timestamp folder
-    ###################################################################
-    - name: Get subfolders inside STIG results path
+    # --------------------------------------------------------------
+    # Identify the latest timestamp folder under host results
+    # --------------------------------------------------------------
+    - name: Identify latest timestamp directory
       ansible.windows.win_shell: |
         Get-ChildItem "{{ stig_results_root }}\\{{ inventory_hostname }}" -Directory |
         Sort-Object Name -Descending |
@@ -24,39 +24,7 @@
       register: timestamp_result
       changed_when: false
 
-    - name: Fail if no STIG results folder found
+    - name: Fail if timestamp directory not found
       ansible.builtin.fail:
-        msg: "No STIG results found on this machine — run the scan first."
-      when: timestamp_result.stdout | trim == ""
-
-    - name: Save timestamp fact
-      ansible.builtin.set_fact:
-        stig_timestamp: "{{ timestamp_result.stdout | trim }}"
-
-    ###################################################################
-    # Create SMB folder path: R:\Role\Hostname\Timestamp
-    ###################################################################
-    - name: Create destination folders on SMB share
-      ansible.windows.win_shell: |
-        $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
-        $cred = New-Object PSCredential "{{ smb_user }}", $sec
-
-        New-PSDrive R FileSystem "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
-
-        $role = "R:\\{{ stig_role_folder }}"
-        $host = "$role\\{{ inventory_hostname }}"
-        $time = "$host\\{{ stig_timestamp }}"
-
-        if (-not (Test-Path $role)) { New-Item -ItemType Directory -Path $role | Out-Null }
-        if (-not (Test-Path $host)) { New-Item -ItemType Directory -Path $host | Out-Null }
-        if (-not (Test-Path $time)) { New-Item -ItemType Directory -Path $time | Out-Null }
-
-        Remove-PSDrive R -Force -ErrorAction SilentlyContinue
-      args:
-        executable: powershell.exe
-
-    ###################################################################
-    # Copy results into the timestamp folder
-    ###################################################################
-    - name: Copy STIG results to central share
-      ansible.windows.win_sh_
+        msg: "No results found for this host. Run STIG scan first."
+      when: ti
