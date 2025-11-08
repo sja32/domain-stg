@@ -25,7 +25,6 @@
         msg: "Evaluate-STIG.ps1 not found — run prep first."
       when: not stig_ps1.stat.exists
 
-
     - name: Run Evaluate-STIG (CKL + CSV)
       ansible.windows.win_shell: |
         Write-Host "Running Evaluate-STIG..."
@@ -33,7 +32,6 @@
         .\Evaluate-STIG.ps1 -Output "CKL,CSV" -OutputPath "{{ stig_results_root }}"
       args:
         executable: PowerShell.exe
-
 
     - name: Copy STIG results to central share
       ansible.windows.win_shell: |
@@ -60,10 +58,9 @@
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
 
-        Write-Host "✅ Results copied to {{ share_root }}\{{ role_folder }}\$hostName"
+        Write-Host "✅ Results copied to {{ share_root }}\\{{ role_folder }}\\$hostName"
       args:
         executable: PowerShell.exe
-
 
     - name: ✅ Summary
       debug:
