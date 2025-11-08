@@ -4,24 +4,36 @@
   gather_facts: yes
 
   vars:
-    stig_results_source: "C:\\Users\\Public\\Documents\\STIG_Compliance\\{{ ansible_hostname }}\\Checklist"
+    # Local results location created by Evaluate-STIG
+    stig_results_local: "C:\\Users\\Public\\Documents\\STIG_Compliance\\Checklist"
+
+    # Central file server share root (your Windows share)
     stig_share_root: "\\\\192.168.10.198\\STIG-Results"
-    smb_user: "{{ smb_username }}"
-    smb_pass: "{{ smb_password }}"
+
+    # These two come from your AWX custom credential:
+    # smb_user → voughtnet\svc-ansible
+    # smb_pass → password (masked)
+    # Do NOT modify here.
 
   tasks:
 
-    - name: Verify Checklist directory exists
+    # ---------------------------------------------------------
+    # Validate local results exist
+    # ---------------------------------------------------------
+    - name: "Verify Checklist directory exists"
       ansible.windows.win_stat:
-        path: "{{ stig_results_source }}"
+        path: "{{ stig_results_local }}"
       register: results_dir
 
-    - name: Stop if no results exist
-      fail:
-        msg: "No Evaluate-STIG results found on {{ ansible_hostname }}. Run STIG scan first."
+    - name: "Stop if no results exist"
+      ansible.builtin.fail:
+        msg: "No Evaluate-STIG results found. Run STIG scan first."
       when: not results_dir.stat.exists
 
-    - name: Map STIG share as R: using domain credentials
+    # ---------------------------------------------------------
+    # Map SMB share as R:
+    # ---------------------------------------------------------
+    - name: "Map STIG share as R: using domain credentials"
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $sec)
@@ -29,7 +41,12 @@
       args:
         executable: powershell.exe
 
-    - name: Ensure host folder exists on R:
+    # ---------------------------------------------------------
+    # Ensure host folder exists on share
+    # Example path created:
+    #   R:\WINDC2
+    # ---------------------------------------------------------
+    - name: "Ensure host folder exists on R:"
       ansible.windows.win_shell: |
         if (-not (Test-Path "R:\\{{ ansible_hostname }}")) {
             New-Item -ItemType Directory -Path "R:\\{{ ansible_hostname }}" | Out-Null
@@ -37,13 +54,19 @@
       args:
         executable: powershell.exe
 
-    - name: Copy STIG results to share
+    # ---------------------------------------------------------
+    # Copy STIG results (CKL + CSV files) to central share
+    # ---------------------------------------------------------
+    - name: "Copy STIG results to central share"
       ansible.windows.win_shell: |
-        Copy-Item "{{ stig_results_source }}\\*" "R:\\{{ ansible_hostname }}" -Recurse -Force
+        Copy-Item "{{ stig_results_local }}\\*" "R:\\{{ ansible_hostname }}" -Recurse -Force
       args:
         executable: powershell.exe
 
-    - name: Unmount R: drive
+    # ---------------------------------------------------------
+    # Unmount R: (ignore errors so playbook does not fail)
+    # ---------------------------------------------------------
+    - name: "Unmount R: drive"
       ansible.windows.win_shell: |
         if (Get-PSDrive R -ErrorAction SilentlyContinue) {
             Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
@@ -51,3 +74,12 @@
       args:
         executable: powershell.exe
       ignore_errors: yes
+
+    # ---------------------------------------------------------
+    # Summary
+    # ---------------------------------------------------------
+    - name: ✅ Summary
+      debug:
+        msg:
+          - "✅ Results copied for {{ ansible_hostname }}"
+          - "📤 Destination: {{ stig_share_root }}\\{{ ansible_hostname }}"
