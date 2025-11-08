@@ -9,17 +9,17 @@
 
   tasks:
 
-    - name: Ensure STIG results folder exists locally
+    - name: Verify Checklist directory exists
       ansible.windows.win_stat:
         path: "{{ stig_results_source }}"
       register: stig_local
 
-    - name: Stop if STIG results do not exist
+    - name: "Stop if no results exist"
       ansible.builtin.fail:
         msg: "No Evaluate-STIG results exist. Run STIG scan first."
       when: not stig_local.stat.exists
 
-    - name: Map SMB share as R: using domain credentials
+    - name: "Map SMB share as R: using domain credentials"
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString '{{ smb_password }}' -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_username }}', $sec)
@@ -28,7 +28,7 @@
       args:
         executable: powershell.exe
 
-    - name: Copy entire STIG_Compliance folder using PowerShell Copy-Item
+    - name: "Copy STIG results to central share"
       ansible.windows.win_shell: |
         $hostname = $env:COMPUTERNAME
         $dest = "R:\\$hostname"
@@ -41,7 +41,7 @@
       args:
         executable: powershell.exe
 
-    - name: Unmap R: cleanly
+    - name: "Unmount R: drive"
       ansible.windows.win_shell: |
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
