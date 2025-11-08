@@ -1,0 +1,41 @@
+---
+- name: Copy STIG Results to Central File Share
+  hosts: "{{ stig_server_group }}"
+  gather_facts: no
+  vars:
+    # Root share where results will be stored
+    stig_results_share: "\\\\fileserver\\STIG_Results"
+
+    # Map group names to target folder names
+    stig_group_folder_map:
+      domain_controllers: "DomainControllers"
+      member_servers: "MemberServers"
+      workstations: "Workstations"
+
+    # Timestamp for foldering, ensures no overwriting
+    stig_timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
+
+  tasks:
+
+    - name: Determine output folder based on selected group
+      set_fact:
+        stig_group_folder: "{{ stig_group_folder_map[stig_server_group] }}"
+
+    - name: Create destination folder path
+      set_fact:
+        stig_destination_path: "{{ stig_results_share }}\\{{ stig_group_folder }}\\{{ inventory_hostname }}\\{{ stig_timestamp }}"
+
+    - name: Ensure destination folder exists on share
+      win_file:
+        path: "{{ stig_destination_path }}"
+        state: directory
+
+    - name: Copy STIG checklist results to share
+      win_copy:
+        src: "C:\\ProgramData\\Evaluate-STIG\\Results\\"
+        dest: "{{ stig_destination_path }}"
+        remote_src: yes
+
+    - name: Log success
+      debug:
+        msg: "Results copied to {{ stig_destination_path }}"
