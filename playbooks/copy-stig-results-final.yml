@@ -1,6 +1,6 @@
 ---
 - name: Copy STIG Results to Central Share (No Timestamp)
-  hosts: "{{ stig_server_group }}"
+  hosts: all
   gather_facts: no
   vars:
     # Base share path
