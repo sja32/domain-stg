@@ -1,10 +1,10 @@
 ---
 - name: Copy Evaluate-STIG results to central share
   hosts: all
-  gather_facts: yes
+  gather_facts: no
   vars:
-    stig_results_source: "C:\\Users\\Public\\Documents\\STIG_Compliance\\Checklist"
-    stig_results_dest: "\\\\192.168.10.198\\STIG-Results\\{{$env:COMPUTERNAME}}"
+    stig_results_source: "C:\\Users\\Public\\Documents\\STIG_Compliance\\$env:COMPUTERNAME\\Checklist"
+    stig_results_dest: "\\\\192.168.10.198\\STIG-Results\\$env:COMPUTERNAME"
 
   tasks:
 
@@ -15,7 +15,7 @@
 
     - name: Stop if no results exist
       ansible.builtin.fail:
-        msg: "No Evaluate-STIG results found. Run STIG scan first."
+        msg: "No Evaluate-STIG results found in {{ stig_results_source }}. Run STIG scan first."
       when: not checklist_stat.stat.exists
 
     - name: Ensure target directory exists on SMB share
@@ -29,8 +29,10 @@
         net use {{ stig_results_dest }} /user:{{ smb_username }} "{{ smb_password }}"
       register: map_share
       changed_when: "'The command completed successfully' in map_share.stdout"
+      args:
+        executable: powershell.exe
 
-    - name: Copy results (robust + incremental)
+    - name: Copy results (robocopy incremental sync)
       ansible.windows.win_shell: |
         robocopy "{{ stig_results_source }}" "{{ stig_results_dest }}" /E /Z /R:2 /W:1 /NFL /NDL
       args:
@@ -40,3 +42,5 @@
       ansible.windows.win_shell: |
         net use {{ stig_results_dest }} /delete /y
       ignore_errors: true
+      args:
+        executable: powershell.exe
