@@ -1,49 +1,49 @@
 ---
-- name: Copy Evaluate-STIG results to central share
+- name: Copy Evaluate-STIG results to central Windows share
   hosts: all
   gather_facts: no
 
   vars:
-    stig_results_source: "C:\\Users\\Public\\Documents\\STIG_Compliance\\{{ ansible_hostname }}\\Checklist"
-    stig_share_root: "\\\\192.168.10.198\\STIG-Results"
+    stig_results_source: "C:\\Users\\Public\\Documents\\STIG_Compliance"
+    stig_results_share: "\\\\192.168.10.198\\STIG-Results"
 
   tasks:
 
-    - name: Verify Checklist directory exists
+    - name: Ensure STIG results folder exists locally
       ansible.windows.win_stat:
         path: "{{ stig_results_source }}"
-      register: checklist_stat
+      register: stig_local
 
-    - name: Stop if no results exist
+    - name: Stop if STIG results do not exist
       ansible.builtin.fail:
-        msg: "No Evaluate-STIG results found. Run STIG scan first."
-      when: not checklist_stat.stat.exists
+        msg: "No Evaluate-STIG results exist. Run STIG scan first."
+      when: not stig_local.stat.exists
 
-    - name: Map remote SMB share using New-PSDrive
+    - name: Map SMB share as R: using domain credentials
       ansible.windows.win_shell: |
-        $sec = ConvertTo-SecureString "{{ smb_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_username }}", $sec)
-        New-PSDrive -Name STIG -PSProvider FileSystem -Root "{{ stig_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+        $sec = ConvertTo-SecureString '{{ smb_password }}' -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_username }}', $sec)
+
+        New-PSDrive -Name R -PSProvider FileSystem -Root '{{ stig_results_share }}' -Credential $cred -ErrorAction Stop | Out-Null
       args:
         executable: powershell.exe
 
-    - name: Ensure host folder exists on share
+    - name: Copy entire STIG_Compliance folder using PowerShell Copy-Item
       ansible.windows.win_shell: |
-        if (-not (Test-Path "STIG:\\{{ ansible_hostname }}")) {
-          New-Item -ItemType Directory -Path "STIG:\\{{ ansible_hostname }}" | Out-Null
+        $hostname = $env:COMPUTERNAME
+        $dest = "R:\\$hostname"
+
+        if (-not (Test-Path $dest)) {
+            New-Item -ItemType Directory -Path $dest | Out-Null
         }
+
+        Copy-Item -Path "{{ stig_results_source }}\\*" -Destination $dest -Recurse -Force
       args:
         executable: powershell.exe
 
-    - name: Copy results into host folder on share
+    - name: Unmap R: cleanly
       ansible.windows.win_shell: |
-        Copy-Item -Path "{{ stig_results_source }}\\*" -Destination "STIG:\\{{ ansible_hostname }}" -Recurse -Force
+        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: powershell.exe
-
-    - name: Unmap STIG PSDrive
-      ansible.windows.win_shell: |
-        Remove-PSDrive -Name STIG -Force -ErrorAction SilentlyContinue
-      ignore_errors: true
-      args:
-        executable: powershell.exe
+      ignore_errors: yes
