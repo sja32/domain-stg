@@ -1,84 +1,62 @@
 ---
-- name: Copy Evaluate-STIG results to central share (Domain Environment)
+- name: Copy latest Evaluate-STIG results to central share
   hosts: all
   gather_facts: no
 
   vars:
-    stig_results: "C:\\Users\\Public\\Documents\\STIG_Compliance"
+    stig_results_root: "C:\\Users\\Public\\Documents\\STIG_Compliance"
     smb_share_root: "\\\\192.168.10.198\\stig-results"
     stig_role_folder: "{{ stig_role_folder | default('Uncategorized') }}"
 
   tasks:
 
     ###################################################################
-    # Get latest timestamp folder from STIG_Compliance
+    # Identify latest timestamp folder
     ###################################################################
-    - name: Identify latest timestamp results folder
+    - name: Get subfolders inside STIG results path
       ansible.windows.win_shell: |
-        $latest = Get-ChildItem "{{ stig_results }}" -Directory |
-                  Sort-Object LastWriteTime -Descending |
-                  Select-Object -First 1 |
-                  Select-Object -ExpandProperty Name
-        Write-Output $latest
+        Get-ChildItem "{{ stig_results_root }}\\{{ inventory_hostname }}" -Directory |
+        Sort-Object Name -Descending |
+        Select-Object -First 1 |
+        Select-Object -ExpandProperty Name
       args:
-        executable: PowerShell.exe
-      register: timestamp_raw
+        executable: powershell.exe
+      register: timestamp_result
+      changed_when: false
 
-    - name: Store timestamp fact
-      set_fact:
-        timestamp: "{{ timestamp_raw.stdout | trim }}"
+    - name: Fail if no STIG results folder found
+      ansible.builtin.fail:
+        msg: "No STIG results found on this machine — run the scan first."
+      when: timestamp_result.stdout | trim == ""
 
-    - name: Fail if scan has not yet been run
-      fail:
-        msg: "No timestamped results exist. Run the Evaluate-STIG scan playbook first."
-      when: timestamp == ""
+    - name: Save timestamp fact
+      ansible.builtin.set_fact:
+        stig_timestamp: "{{ timestamp_result.stdout | trim }}"
 
     ###################################################################
-    # Create Role -> Host -> Timestamp path on share
+    # Create SMB folder path: R:\Role\Hostname\Timestamp
     ###################################################################
-    - name: Create SMB directory structure
+    - name: Create destination folders on SMB share
       ansible.windows.win_shell: |
-        $sec  = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+        $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
+        $cred = New-Object PSCredential "{{ smb_user }}", $sec
 
-        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+        New-PSDrive R FileSystem "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
-        $rolePath = "R:\{{ stig_role_folder }}"
-        $hostPath = "$rolePath\{{ inventory_hostname }}"
-        $timePath = "$hostPath\{{ timestamp }}"
+        $role = "R:\\{{ stig_role_folder }}"
+        $host = "$role\\{{ inventory_hostname }}"
+        $time = "$host\\{{ stig_timestamp }}"
 
-        if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath | Out-Null }
-        if (-not (Test-Path $hostPath)) { New-Item -ItemType Directory -Path $hostPath | Out-Null }
-        if (-not (Test-Path $timePath)) { New-Item -ItemType Directory -Path $timePath | Out-Null }
+        if (-not (Test-Path $role)) { New-Item -ItemType Directory -Path $role | Out-Null }
+        if (-not (Test-Path $host)) { New-Item -ItemType Directory -Path $host | Out-Null }
+        if (-not (Test-Path $time)) { New-Item -ItemType Directory -Path $time | Out-Null }
 
-        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+        Remove-PSDrive R -Force -ErrorAction SilentlyContinue
       args:
-        executable: PowerShell.exe
+        executable: powershell.exe
 
     ###################################################################
-    # Copy only the latest run folder
+    # Copy results into the timestamp folder
     ###################################################################
-    - name: Copy latest STIG results to share
-      ansible.windows.win_shell: |
-        $sec  = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
-
-        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
-
-        $src  = "{{ stig_results }}\{{ timestamp }}\*"
-        $dest = "R:\{{ stig_role_folder }}\{{ inventory_hostname }}\{{ timestamp }}"
-
-        Copy-Item $src $dest -Recurse -Force
-
-        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
-      args:
-        executable: PowerShell.exe
-
-    ###################################################################
-    # Summary
-    ###################################################################
-    - name: ✅ Summary
-      debug:
-        msg:
-          - "📤 Copied STIG results from {{ inventory_hostname }}"
-          - "➡️  {{ smb_share_root }}\\{{ stig_role_folder }}\\{{ inventory_hostname }}\\{{ timestamp }}"
+    - name: Copy STIG results to central share
+      ansible.windows.win_sh_
