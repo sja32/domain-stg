@@ -1,7 +1,7 @@
 ---
 - name: Copy Evaluate-STIG results to central share
   hosts: all
-  gather_facts: no
+  gather_facts: yes   # <-- needed so ansible_hostname is available
 
   vars:
     stig_role_folder: "{{ stig_role_folder | default('Uncategorized') }}"
@@ -13,7 +13,7 @@
 
     - name: Ensure host has Checklist folder
       ansible.windows.win_stat:
-        path: "{{ stig_results_root }}\\$env:COMPUTERNAME\\Checklist"
+        path: "{{ stig_results_root }}\\{{ ansible_hostname }}\\Checklist"
       register: checklist_dir
 
     - name: ❌ Fail if no results exist yet
@@ -26,7 +26,7 @@
         $sec = ConvertTo-SecureString "{{ smb_password }}" -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_username }}", $sec)
 
-        $host = $env:COMPUTERNAME
+        $host = "{{ ansible_hostname }}"
         $dest = "{{ smb_share_root }}\\{{ stig_role_folder }}\\$host\\{{ timestamp }}"
 
         New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
@@ -42,9 +42,8 @@
         $sec = ConvertTo-SecureString "{{ smb_password }}" -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_username }}", $sec)
 
-        $host = $env:COMPUTERNAME
-        $src = "{{ stig_results_root }}\\$host\\Checklist"
-        $dest = "R:\\{{ stig_role_folder }}\\$host\\{{ timestamp }}"
+        $src = "{{ stig_results_root }}\\{{ ansible_hostname }}\\Checklist"
+        $dest = "R:\\{{ stig_role_folder }}\\{{ ansible_hostname }}\\{{ timestamp }}"
 
         New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
@@ -57,5 +56,5 @@
     - name: ✅ Summary
       debug:
         msg:
-          - "✅ Results copied from $env:COMPUTERNAME"
-          - "➡️  To: {{ smb_share_root }}\\{{ stig_role_folder }}\\$env:COMPUTERNAME\\{{ timestamp }}"
+          - "✅ Results copied from {{ ansible_hostname }}"
+          - "➡️  To: {{ smb_share_root }}\\{{ stig_role_folder }}\\{{ ansible_hostname }}\\{{ timestamp }}"
