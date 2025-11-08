@@ -1,0 +1,38 @@
+---
+- name: Copy STIG Results to Central Share (No Timestamp)
+  hosts: "{{ stig_server_group }}"
+  gather_facts: no
+  vars:
+    # Base share path
+    stig_results_share: "\\\\fileserver\\STIG-Results"
+
+    # Map group names to folder names on the share
+    stig_group_folder_map:
+      domain_controllers: "Domain-Controllers"
+      member_servers: "Member-Servers"
+      workstations: "Workstations"
+
+  tasks:
+
+    - name: Determine correct group output folder
+      set_fact:
+        stig_group_folder: "{{ stig_group_folder_map[stig_server_group] }}"
+
+    - name: Define final destination path
+      set_fact:
+        stig_destination_path: "{{ stig_results_share }}\\{{ stig_group_folder }}\\{{ inventory_hostname }}"
+
+    - name: Ensure destination folder exists
+      win_file:
+        path: "{{ stig_destination_path }}"
+        state: directory
+
+    - name: Copy all Evaluate-STIG output files to central share
+      win_copy:
+        src: "C:\\ProgramData\\Evaluate-STIG\\Results\\"
+        dest: "{{ stig_destination_path }}"
+        remote_src: yes
+
+    - name: Confirm copy location
+      debug:
+        msg: "STIG results copied to {{ stig_destination_path }}"
