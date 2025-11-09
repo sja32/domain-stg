@@ -1,38 +1,37 @@
 ---
-- name: Copy STIG Results to Central Share (No Timestamp)
+- name: Copy STIG Results to Central Share (Overwrite Mode - No Timestamp)
   hosts: all
   gather_facts: no
   vars:
-    # Base share path
+    # Central file share STIG results root
     stig_results_share: "\\\\fileserver\\STIG-Results"
 
-    # Map group names to folder names on the share
+    # Map survey values → share folder names
     stig_group_folder_map:
       domain_controllers: "Domain-Controllers"
       member_servers: "Member-Servers"
       workstations: "Workstations"
 
+    # Default Evaluate-STIG output location
+    stig_local_results_path: "C:\\Users\\Public\\Documents\\STIG-Compliance\\{{ inventory_hostname }}"
+
   tasks:
 
-    - name: Determine correct group output folder
+    - name: Determine correct group destination folder
       set_fact:
-        stig_group_folder: "{{ stig_group_folder_map[stig_server_group] }}"
+        stig_destination_path: "{{ stig_results_share }}\\{{ stig_group_folder_map[stig_server_group] }}\\{{ inventory_hostname }}"
 
-    - name: Define final destination path
-      set_fact:
-        stig_destination_path: "{{ stig_results_share }}\\{{ stig_group_folder }}\\{{ inventory_hostname }}"
-
-    - name: Ensure destination folder exists
+    - name: Ensure destination folder exists on share
       win_file:
         path: "{{ stig_destination_path }}"
         state: directory
 
-    - name: Copy all Evaluate-STIG output files to central share
+    - name: Copy results to central share (replace existing files)
       win_copy:
-        src: "C:\\ProgramData\\Evaluate-STIG\\Results\\"
+        src: "{{ stig_local_results_path }}\\"
         dest: "{{ stig_destination_path }}"
         remote_src: yes
 
     - name: Confirm copy location
       debug:
-        msg: "STIG results copied to {{ stig_destination_path }}"
+        msg: "Results copied to {{ stig_destination_path }}"
