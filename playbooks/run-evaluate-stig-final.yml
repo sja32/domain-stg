@@ -1,0 +1,25 @@
+---
+- name: Run Evaluate-STIG scan and export CKL and CSV
+  hosts: all
+  gather_facts: no
+  vars:
+    eval_stig_version: "Evaluate-STIG_1.2507.5"
+    eval_stig_local_root: "C:\\ProgramData\\{{ eval_stig_version }}"
+
+  tasks:
+    - name: Verify Evaluate-STIG.ps1 is present
+      ansible.windows.win_stat:
+        path: "{{ eval_stig_local_root }}\\Evaluate-STIG.ps1"
+      register: stig_ps1
+
+    - name: Stop if missing
+      ansible.builtin.fail:
+        msg: "Evaluate-STIG.ps1 not found at {{ eval_stig_local_root }}. Run prep first."
+      when: not stig_ps1.stat.exists
+
+    - name: Run Evaluate-STIG (default output location)
+      ansible.windows.win_shell: |
+        powershell.exe -ExecutionPolicy Bypass -NoProfile -Command ^
+        "& '{{ eval_stig_local_root }}\\Evaluate-STIG.ps1' -Output Ckl,Csv"
+      args:
+        chdir: "{{ eval_stig_local_root }}"
