@@ -1,0 +1,87 @@
+---
+# ============================================
+#   Master Copy Pipeline - All Host Types
+#   K.I.S.F. Version
+# ============================================
+
+- name: Copy STIG Results (Domain Controllers)
+  hosts: Domain-Controllers
+  gather_facts: no
+  vars:
+    stig_role_folder: "Domain-Controllers"
+
+  tasks:
+  - name: Get hostname
+    ansible.windows.win_shell: |
+      (hostname).Trim()
+    register: host_name
+
+  - set_fact:
+      stig_target_hostname: "{{ host_name.stdout }}"
+
+  - name: Ensure destination folder exists
+    ansible.windows.win_shell: |
+      $dest = "{{ results_share_root }}\\{{ stig_role_folder }}\\{{ stig_target_hostname }}"
+      if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
+      Write-Output "Destination ready: $dest"
+
+  - name: Copy results
+    ansible.windows.win_shell: |
+      $src = "{{ stig_local_path }}\\Results"
+      $dest = "{{ results_share_root }}\\{{ stig_role_folder }}\\{{ stig_target_hostname }}"
+      Copy-Item -Path $src -Destination $dest -Recurse -Force
+      Write-Output "Copied: $src to $dest"
+
+
+- name: Copy STIG Results (Member Servers)
+  hosts: Member-Servers
+  gather_facts: no
+  vars:
+    stig_role_folder: "Member-Servers"
+
+  tasks:
+  - name: Get hostname
+    ansible.windows.win_shell: |
+      (hostname).Trim()
+    register: host_name
+
+  - set_fact:
+      stig_target_hostname: "{{ host_name.stdout }}"
+
+  - name: Ensure destination folder exists
+    ansible.windows.win_shell: |
+      $dest = "{{ results_share_root }}\\{{ stig_role_folder }}\\{{ stig_target_hostname }}"
+      if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
+      Write-Output "Destination ready: $dest"
+
+  - name: Copy results
+    ansible.windows.win_shell: |
+      $src = "{{ stig_local_path }}\\Results"
+      $dest = "{{ results_share_root }}\\{{ stig_role_folder }}\\{{ stig_target_hostname }}"
+      Copy-Item -Path $src -Destination $dest -Recurse -Force
+      Write-Output "Copied: $src to $dest"
+
+
+- name: Copy STIG Results (Workstations)
+  hosts: Workstations
+  gather_facts: no
+  vars:
+    stig_role_folder: "Workstations"
+
+  tasks:
+  - name: Get hostname
+    ansible.windows.win_shell: |
+      (hostname).Trim()
+    register: host_name
+
+  - set_fact:
+      stig_target_hostname: "{{ host_name.stdout }}"
+
+  - name: Ensure destination folder exists
+    ansible.windows.win_shell: |
+      $dest = "{{ results_share_root }}\\{{ stig_role_folder }}\\{{ stig_target_hostname }}"
+      if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
+      Write-Output "Destination ready: $dest"
+
+  - name: Copy results
+    ansible.windows.w
