@@ -45,17 +45,7 @@
         Write-Host "✅ STIG scan complete."
       args:
         executable: PowerShell.exe
-
-    ###################################################################
-    # Create Timestamp Directory
-    ###################################################################
-    - name: Create timestamp subfolder locally
-      ansible.windows.win_shell: |
-        $target = "{{ stig_results }}\\{{ timestamp }}"
-        if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target | Out-Null }
-      args:
-        executable: PowerShell.exe
-
+   
     ###################################################################
     # Create Role + Hostname + Timestamp folder on SMB Share
     ###################################################################
