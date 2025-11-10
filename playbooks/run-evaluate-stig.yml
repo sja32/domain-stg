@@ -4,20 +4,13 @@
   gather_facts: no
 
   vars:
-    # Location where Evaluate-STIG is installed
     stig_workdir: "C:\\ProgramData\\Evaluate-STIG_1.2507.5"
-
-    # Default STIG output directory created by Evaluate-STIG
     stig_results: "C:\\Users\\Public\\Documents\\STIG_Compliance\\{{ inventory_hostname }}\\Checklist"
-
-    # SMB Share root
     smb_share_root: "\\\\192.168.10.198\\stig-results"
+    smb_user: "VoughtNet\\svc-ansible"
 
   tasks:
 
-    ###################################################################
-    # Ensure Evaluate-STIG.ps1 Exists
-    ###################################################################
     - name: Ensure Evaluate-STIG.ps1 exists
       ansible.windows.win_stat:
         path: "{{ stig_workdir }}\\Evaluate-STIG.ps1"
@@ -28,51 +21,32 @@
         msg: "Evaluate-STIG.ps1 not found — run prep first."
       when: not stig_ps1.stat.exists
 
-    ###################################################################
-    # Run Evaluate-STIG (uses default output location)
-    ###################################################################
     - name: ▶️ Run Evaluate-STIG scan
       ansible.windows.win_shell: |
-        Write-Host "Running Evaluate-STIG..."
         Set-Location "{{ stig_workdir }}"
-        .\Evaluate-STIG.ps1 -output ckl, csv
-        Write-Host "✅ STIG scan complete."
+        .\Evaluate-STIG.ps1 -Output "CKL,CSV"
       args:
         executable: PowerShell.exe
 
-    ###################################################################
-    # Create \\Share\<Group>\<Hostname>
-    # group_names[0] automatically resolves to:
-    #   Domain-Controllers, Member-Servers, or Workstations
-    ###################################################################
-
-    - name: Ensure destination folder exists on SMB share
-      no_log: true
+    - name: Ensure SMB destination folder exists
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential("{{ ansible_user }}", $sec)
+        $cred = New-Object System.Management.Automation.PSCredential "{{ smb_user }}", $sec
 
         New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
-        $rolePath = "R:\\{{ group_names[0] }}"
-        $hostPath = "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}"
-
-        if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
-        if (-not (Test-Path $hostPath)) { New-Item -ItemType Directory -Path $hostPath -Force | Out-Null }
+        $dest = "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}"
+        if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
 
-    
-    ###################################################################
-    # Copy Results (No Timestamp — Always Overwrites / Updates)
-    ###################################################################
-    - name: 📤 Upload STIG results to SMB Share
+    - name: 📤 Copy STIG results to SMB share
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential -ArgumentList "{{ ansible_user }}", $sec
-        
+        $cred = New-Object System.Management.Automation.PSCredential "{{ smb_user }}", $sec
+
         New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
         Copy-Item "{{ stig_results }}\\*" "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}" -Recurse -Force
@@ -81,12 +55,8 @@
       args:
         executable: PowerShell.exe
 
-    ###################################################################
-    # Summary
-    ###################################################################
     - name: ✅ Summary
       debug:
         msg:
           - "✅ STIG Scan completed on {{ inventory_hostname }}"
-          - "📁 Local results: {{ stig_results }}"
           - "📤 Uploaded to: {{ smb_share_root }}\\{{ group_names[0] }}\\{{ inventory_hostname }}"
