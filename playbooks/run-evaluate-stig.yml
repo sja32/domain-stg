@@ -35,7 +35,7 @@
       ansible.windows.win_shell: |
         Write-Host "Running Evaluate-STIG..."
         Set-Location "{{ stig_workdir }}"
-        .\Evaluate-STIG.ps1
+        .\Evaluate-STIG.ps1 -output ckl, csv
         Write-Host "✅ STIG scan complete."
       args:
         executable: PowerShell.exe
