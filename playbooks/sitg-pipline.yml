@@ -58,4 +58,51 @@
       args:
         executable: PowerShell.exe
 
-    ##################################
+    ###################################################################
+    # 3) COPY RESULTS TO SMB SHARE (Auto-group based on AWX group)
+    ###################################################################
+    - name: Determine role group
+      set_fact:
+        stig_group: "{{ group_names[0] | lower }}"
+
+    - name: Ensure destination folder exists on SMB share
+      ansible.windows.win_shell: |
+        $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential -ArgumentList "{{ ansible_user }}", $sec
+
+        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+
+        $destRoot = "R:\\{{ stig_group }}"
+        $destHost = "$destRoot\\{{ inventory_hostname }}"
+
+        if (-not (Test-Path $destRoot)) { New-Item -ItemType Directory -Path $destRoot -Force | Out-Null }
+        if (-not (Test-Path $destHost)) { New-Item -ItemType Directory -Path $destHost -Force | Out-Null }
+
+        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+      args:
+        executable: PowerShell.exe
+      no_log: true
+
+    - name: 📤 Upload STIG results to SMB Share
+      ansible.windows.win_shell: |
+        $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential -ArgumentList "{{ ansible_user }}", $sec
+
+        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+
+        Copy-Item "{{ stig_results }}\\*" "R:\\{{ stig_group }}\\{{ inventory_hostname }}" -Recurse -Force
+
+        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+      args:
+        executable: PowerShell.exe
+      no_log: true
+
+    ###################################################################
+    # 4) SUMMARY
+    ###################################################################
+    - name: ✅ Summary
+      debug:
+        msg:
+          - "✅ STIG Scan completed for: {{ inventory_hostname }}"
+          - "📁 Results located locally at: {{ stig_results }}"
+          - "📤 Uploaded to: {{ smb_share_root }}\\{{ stig_group }}\\{{ inventory_hostname }}"
