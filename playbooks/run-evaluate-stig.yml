@@ -47,14 +47,15 @@
     ###################################################################
 
     - name: Ensure destination folder exists on SMB share
+      no_log: true
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential -ArgumentList "{{ ansible_user }}", $sec
+        $cred = New-Object System.Management.Automation.PSCredential("{{ ansible_user }}", $sec)
 
         New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
         $rolePath = "R:\\{{ group_names[0] }}"
-        $hostPath = "$rolePath\\{{ inventory_hostname }}"
+        $hostPath = "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}"
 
         if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
         if (-not (Test-Path $hostPath)) { New-Item -ItemType Directory -Path $hostPath -Force | Out-Null }
@@ -62,6 +63,7 @@
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
+
     
     ###################################################################
     # Copy Results (No Timestamp — Always Overwrites / Updates)
