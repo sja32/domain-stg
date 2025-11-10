@@ -1,0 +1,48 @@
+---
+- name: "STIG - Full Automatic Pipeline"
+  organization: "Default"
+  state: "present"
+  workflow_nodes:
+
+    - identifier: prep_dc
+      unified_job_template: "02-Prep Hosts - DC"
+      success_nodes:
+        - identifier: prep_ms
+
+    - identifier: prep_ms
+      unified_job_template: "03-Prep Hosts - Member-Servers"
+      success_nodes:
+        - identifier: prep_ws
+
+    - identifier: prep_ws
+      unified_job_template: "04-Prep Hosts - Workstations"
+      success_nodes:
+        - identifier: run_dc
+
+    - identifier: run_dc
+      unified_job_template: "02-Run STIG Scan - DC"
+      success_nodes:
+        - identifier: run_ms
+
+    - identifier: run_ms
+      unified_job_template: "03-Run STIG Scan -Member-Servers"
+      success_nodes:
+        - identifier: run_ws
+
+    - identifier: run_ws
+      unified_job_template: "04-Run STIG Scan - Workstations"
+      success_nodes:
+        - identifier: copy_dc
+
+    - identifier: copy_dc
+      unified_job_template: "02-Copy Results - DC"
+      success_nodes:
+        - identifier: copy_ms
+
+    - identifier: copy_ms
+      unified_job_template: "03-Copy Results - Member-Servers"
+      success_nodes:
+        - identifier: copy_ws
+
+    - identifier: copy_ws
+      unified_job_template: "04-Copy Results - Workstations"
