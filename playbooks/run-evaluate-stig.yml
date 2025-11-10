@@ -45,6 +45,7 @@
     # group_names[0] automatically resolves to:
     #   Domain-Controllers, Member-Servers, or Workstations
     ###################################################################
+
     - name: Ensure destination folder exists on SMB share
       ansible.windows.win_shell: |
         $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
@@ -61,7 +62,7 @@
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
-
+    
     ###################################################################
     # Copy Results (No Timestamp — Always Overwrites / Updates)
     ###################################################################
