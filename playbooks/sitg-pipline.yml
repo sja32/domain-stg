@@ -95,7 +95,7 @@
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
       args:
         executable: PowerShell.exe
-      no_log: true
+      no_log: false
 
     ###################################################################
     # 4) SUMMARY
