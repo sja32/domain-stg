@@ -1,0 +1,32 @@
+---
+- name: Copy Evaluate-STIG results to central Windows share (Universal Auto-Grouping)
+  hosts: all
+  gather_facts: no
+
+  vars:
+    # Base share path — modify this if needed
+    stig_results_share: "\\\\192.168.10.198\\STIG-Results"
+
+    # Path where Evaluate-STIG stores results on Windows hosts
+    stig_source_path: "C:\\ProgramData\\Evaluate-STIG_1.2507.5\\results"
+
+  tasks:
+
+  - name: Get hostname (used for folder naming)
+    win_shell: $env:COMPUTERNAME
+    register: host_name
+
+  - name: Ensure destination folder exists
+    win_file:
+      path: "{{ stig_results_share }}\\{{ stig_role_folder }}\\{{ host_name.stdout }}"
+      state: directory
+
+  - name: Copy results to central share
+    win_copy:
+      src: "{{ stig_source_path }}\\"
+      dest: "{{ stig_results_share }}\\{{ stig_role_folder }}\\{{ host_name.stdout }}"
+      remote_src: yes
+
+  - name: Show final result location
+    debug:
+      msg: "✅ Results saved to {{ stig_results_share }}\\{{ stig_role_folder }}\\{{ host_name.stdout }}"
