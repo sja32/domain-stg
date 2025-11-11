@@ -59,35 +59,38 @@
     debug:
       msg: "✅ STIG Scan complete on {{ inventory_hostname }}"
 
-  ###################################################################
-  # COPY RESULTS TO SHARE (Your proven working block)
+    ###################################################################
+  # COPY RESULTS TO SHARE
   ###################################################################
   - name: 📤 Copy STIG Results to SMB Share
-    ansible.windows.win_shell: |
-      $srcRoot = '{{ stig_results_root }}'
-      $hostName = $env:COMPUTERNAME
-      $src = Join-Path $srcRoot $hostName
-      $srcChecklist = Join-Path $src 'Checklist'
+    ansible.windows.win_powershell:
+      script: |
+        $srcRoot    = "{{ stig_results_local }}"
+        $hostName   = $env:COMPUTERNAME
+        $src        = Join-Path -Path $srcRoot -ChildPath $hostName
+        $srcChecklist = Join-Path -Path $src -ChildPath "Checklist"
 
-      if (-not (Test-Path $srcChecklist)) { throw "No Evaluate-STIG results at $srcChecklist" }
+        if (-not (Test-Path -Path $srcChecklist)) {
+          throw "❌ No Evaluate-STIG results found at $srcChecklist"
+        }
 
-      $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
-      $cred = New-Object System.Management.Automation.PSCredential '{{ smb_user_effective }}', $sec
-      New-PSDrive -Name R -PSProvider FileSystem -Root '{{ share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
+        $sec  = ConvertTo-SecureString "{{ smb_pass_effective }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential "{{ smb_user_effective }}", $sec
 
-      $rolePath = Join-Path 'R:\' '{{ role_folder }}'
-      $destHost = Join-Path $rolePath $hostName
+        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
-      if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
-      if (-not (Test-Path $destHost)) { New-Item -ItemType Directory -Path $destHost -Force | Out-Null }
+        $rolePath = Join-Path -Path "R:\" -ChildPath "{{ group_names[0] }}"
+        $destHost = Join-Path -Path $rolePath -ChildPath $hostName
 
-      Copy-Item (Join-Path $src 'Checklist\*') $destHost -Recurse -Force
+        if (-not (Test-Path -Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
+        if (-not (Test-Path -Path $destHost)) { New-Item -ItemType Directory -Path $destHost -Force | Out-Null }
 
-      Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+        Copy-Item -Path (Join-Path $src "Checklist\*") -Destination $destHost -Recurse -Force
 
-    args:
-      executable: PowerShell.exe
+        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+
+    register: copy_result
 
   - name: ✅ Upload Complete
     debug:
-      msg: "📤 Uploaded to {{ share_root }}\\{{ role_folder }}\\{{ ansible_env.COMPUTERNAME }}"
+      msg: "✅ Results uploaded to {{ share_root }}\\{{ group_names[0] }}\\{{ ansible_hostname }}"
