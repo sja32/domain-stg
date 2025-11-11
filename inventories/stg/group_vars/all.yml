@@ -1,7 +1,7 @@
 stig_version: "Evaluate-STIG_1.2507.5"
 
 stig_share_eval: "\\\\192.168.10.198\\Evaluate-STIG"
-stig_share_results: "\\\\192.168.10.198\\STIG-Results"
+stig_share_results: "\\\\192.168.10.198\\stig-results"
 
 stig_local_path: "C:\\ProgramData\\{{ stig_version }}"
 stig_results_local: "C:\\Users\\Public\\Documents\\STIG_Compliance"
