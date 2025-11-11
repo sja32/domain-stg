@@ -43,32 +43,28 @@
     ###################################################################
     # Create Share Path + Upload Results
     ###################################################################
-        - name: Ensure SMB destination folder exists
-      ansible.windows.win_shell: |
-        net use R: "{{ smb_share_root }}"
-        if (!(Test-Path "R:\\{{ group_names[0] }}")) { New-Item -Path "R:\\{{ group_names[0] }}" -ItemType Directory -Force | Out-Null }
-        if (!(Test-Path "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}")) { New-Item -Path "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}" -ItemType Directory -Force | Out-Null }
-        net use R: /delete /y
-      args:
-        executable: PowerShell.exe
+  - name: Ensure SMB destination folder exists
+    ansible.windows.win_shell: |
+      $sec = ConvertTo-SecureString "{{ smb_password }}" -AsPlainText -Force
+      $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_username }}", $sec)
 
-    - name: 📤 Copy STIG results to SMB share
-  ansible.windows.win_shell: |
-    $sec = ConvertTo-SecureString "{{ smb_password }}" -AsPlainText -Force
-    $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_username }}", $sec)
+      New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $cred -Persist -ErrorAction Stop | Out-Null
 
-    New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $cred -ErrorAction Stop | Out-Null
+      $rolePath = "R:\\{{ group_names[0] }}"
+      $hostPath = "$rolePath\\{{ inventory_hostname }}"
 
-    Copy-Item "{{ stig_results_local }}\{{ inventory_hostname }}\Checklist\*" `
-      "R:\{{ group_names[0] }}\{{ inventory_hostname }}" -Recurse -Force
+      if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
+      if (-not (Test-Path $hostPath)) { New-Item -ItemType Directory -Path $hostPath -Force | Out-Null }
 
-    Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
-  args:
-    executable: PowerShell.exe
-  vars:
-    smb_username: "{{ lookup('env', 'SMB_USERNAME') }}"
-    smb_password: "{{ lookup('env', 'SMB_PASSWORD') }}"
-  no_log: true
+  - name: 📤 Copy STIG results to SMB share
+    ansible.windows.win_shell: |
+      $sec = ConvertTo-SecureString "{{ smb_password }}" -AsPlainText -Force
+      $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_username }}", $sec)
+
+      New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $cred -Persist -ErrorAction Stop | Out-Null
+
+      Copy-Item "{{ stig_results_local }}\\{{ inventory_hostname }}\\Checklist\\*" "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}" -Recurse -Force
+
 
     - name: ✅ Summary
       ansible.builtin.debug:
