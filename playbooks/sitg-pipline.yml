@@ -43,35 +43,23 @@
     ###################################################################
     # Create Share Path + Upload Results
     ###################################################################
-    - name: Ensure SMB destination folder exists
-      ansible.windows.win_powershell:
-        script: |
-          $sec = ConvertTo-SecureString "{{ smb_password }}" -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $sec)
-
-          New-PSDrive -Name R -PSProvider FileSystem -Root "{{ share_path }}" -Credential $cred -ErrorAction Stop | Out-Null
-
-          $rolePath = "R:\{{ role_folder }}"
-          $hostPath = "$rolePath\{{ inventory_hostname }}"
-
-          if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
-          if (-not (Test-Path $hostPath)) { New-Item -ItemType Directory -Path $hostPath -Force | Out-Null }
-
-          Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
-      no_log: true
+        - name: Ensure SMB destination folder exists
+      ansible.windows.win_shell: |
+        net use R: "{{ smb_share_root }}"
+        if (!(Test-Path "R:\\{{ group_names[0] }}")) { New-Item -Path "R:\\{{ group_names[0] }}" -ItemType Directory -Force | Out-Null }
+        if (!(Test-Path "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}")) { New-Item -Path "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}" -ItemType Directory -Force | Out-Null }
+        net use R: /delete /y
+      args:
+        executable: PowerShell.exe
 
     - name: 📤 Copy STIG results to SMB share
-      ansible.windows.win_powershell:
-        script: |
-          $sec = ConvertTo-SecureString "{{ smb_password }}" -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $sec)
+      ansible.windows.win_shell: |
+        net use R: "{{ smb_share_root }}"
+        Copy-Item "{{ stig_results_local }}\\{{ inventory_hostname }}\\Checklist\\*" "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}" -Recurse -Force
+        net use R: /delete /y
+      args:
+        executable: PowerShell.exe
 
-          New-PSDrive -Name R -PSProvider FileSystem -Root "{{ share_path }}" -Credential $cred -ErrorAction Stop | Out-Null
-
-          robocopy "C:\Users\Public\Documents\STIG_Compliance\{{ inventory_hostname }}" `
-                   "R:\{{ role_folder }}\{{ inventory_hostname }}" /E /NFL /NDL /NJH /NJS /NP
-
-          Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
 
     - name: ✅ Summary
       ansible.builtin.debug:
