@@ -59,39 +59,33 @@
     debug:
       msg: "✅ STIG Scan complete on {{ inventory_hostname }}"
 
-  ###################################################################
-  # COPY RESULTS TO SHARE (NO TIMESTAMP)
+    ###################################################################
+  # COPY RESULTS TO SHARE (simple, correct, reliable)
   ###################################################################
   - name: 📤 Copy STIG Results to SMB Share
     ansible.windows.win_powershell:
       script: |
-        $srcRoot    = "{{ stig_results_local }}"
-        $hostName   = $env:COMPUTERNAME
-
+        $srcRoot = "{{ stig_results_local }}"
+        $hostName = $env:COMPUTERNAME
         $src = Join-Path -Path $srcRoot -ChildPath $hostName
-        $srcChecklist = Join-Path -Path $src -ChildPath "Checklist"
 
-        if (-not (Test-Path -Path $srcChecklist)) {
-          throw "❌ No Evaluate-STIG results found at $srcChecklist"
+        if (-not (Test-Path -Path $src)) {
+            throw "❌ No STIG results found in $src"
         }
 
-        $sec  = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential "{{ smb_user }}", $sec
+        $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $sec)
 
-        New-PSDrive -Name R -PSProvider FileSystem -Root "{{ share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+        New-PSDrive -Name R -PSProvider FileSystem -Root "\\\\192.168.10.198\\stig-results" -Credential $cred -ErrorAction Stop | Out-Null
 
-        $rolePath = Join-Path -Path "R:\" -ChildPath "{{ group_names[0] }}"
-        $destHost = Join-Path -Path $rolePath -ChildPath $hostName
+        $dest = "R:\\$hostName"
+        if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
 
-        if (-not (Test-Path -Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
-        if (-not (Test-Path -Path $destHost)) { New-Item -ItemType Directory -Path $destHost -Force | Out-Null }
-
-        Copy-Item -Path (Join-Path $src "Checklist\*") -Destination $destHost -Recurse -Force
+        Copy-Item -Path "$src\\Checklist\\*" -Destination $dest -Recurse -Force
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
 
-    register: stig_copy_result
+    register: upload_result
 
-  - name: ✅ Upload Complete
-    debug:
-      msg: "✅ Results uploaded to {{ share_root }}\\{{ group_names[0] }}\\{{ ansible_hostname }}"
+  - debug:
+      msg: "✅ Results uploaded to \\\\192.168.10.198\\stig-results\\{{ ansible_hostname }}"
