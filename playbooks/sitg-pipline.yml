@@ -1,104 +1,95 @@
 ---
-- name: Prepare, Scan, and Upload STIG Results
+- name: Full STIG Pipeline (Prep → Scan → Upload)
   hosts: all
   gather_facts: no
 
   vars:
-    # Paths for Evaluate-STIG deployment
-    stig_share_path: "\\\\192.168.10.198\\Evaluate-STIG\\Evaluate-STIG_1.2507.5"
-    stig_local_path: "C:\\ProgramData\\Evaluate-STIG_1.2507.5"
-
-    # Default output folder Evaluate-STIG uses
-    stig_results_path: "C:\\Users\\Public\\Documents\\STIG_Compliance"
-
-    # SMB Share for results
-    results_share_root: "\\\\192.168.10.198\\STIG-Results"
+    # Version & paths
+    stig_version: "Evaluate-STIG_1.2507.5"
+    stig_share_path: "\\192.168.10.198\\Evaluate-STIG\\{{ stig_version }}"
+    stig_local_path: "C:\\ProgramData\\{{ stig_version }}"
+    stig_results_local: "C:\\Users\\Public\\Documents\\STIG_Compliance"
 
   tasks:
-    ###################################################################
-    # PREP HOST
-    ###################################################################
-    - name: 🚀 Start Prep
-      ansible.builtin.debug:
-        msg: "Preparing {{ inventory_hostname }} for Evaluate-STIG deployment"
+  ###################################################################
+  # 1) Prep - Ensure Evaluate-STIG is deployed fresh each run
+  ###################################################################
+  - name: 🚀 Prep - Remove existing Evaluate-STIG directory
+    ansible.windows.win_powershell:
+      script: |
+        if (Test-Path "{{ stig_local_path }}") {
+            Remove-Item "{{ stig_local_path }}" -Recurse -Force -ErrorAction SilentlyContinue
+        }
 
-    - name: Remove existing Evaluate-STIG folder (force refresh)
-      ansible.windows.win_powershell:
-        script: |
-          if (Test-Path "{{ stig_local_path }}") {
-              Remove-Item "{{ stig_local_path }}" -Recurse -Force -ErrorAction SilentlyContinue
-          }
+  - name: Create Evaluate-STIG directory
+    ansible.windows.win_file:
+      path: "{{ stig_local_path }}"
+      state: directory
 
-    - name: Recreate folder cleanly
-      ansible.windows.win_file:
-        path: "{{ stig_local_path }}"
-        state: directory
+  - name: Copy Evaluate-STIG to host (fresh deployment)
+    ansible.windows.win_powershell:
+      script: |
+        $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
 
-    - name: Copy Evaluate-STIG files to ProgramData (using AWX injected credentials)
-      ansible.windows.win_powershell:
-        script: |
-          $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+        New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_path }}" -Credential $cred -ErrorAction Stop | Out-Null
+        Copy-Item "Z:\*" "{{ stig_local_path }}" -Recurse -Force
+        Remove-PSDrive -Name Z -Force -ErrorAction SilentlyContinue
 
-          New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_path }}" -Credential $cred -ErrorAction Stop | Out-Null
-          Copy-Item "Z:\*" "{{ stig_local_path }}" -Recurse -Force
-          Remove-PSDrive -Name Z -Force -ErrorAction SilentlyContinue
+  ###################################################################
+  # 2) Run the STIG Scan (dotnet4 targeted for speed)
+  ###################################################################
+  - name: ▶️ Run Evaluate-STIG Scan (dotnet4 only)
+    ansible.windows.win_shell: |
+      Set-ExecutionPolicy Bypass -Scope Process -Force
+      Set-Location "{{ stig_local_path }}"
+      .\Evaluate-STIG.ps1 -selectstig dotnet4 -Output "CKL,CSV"
+    args:
+      executable: PowerShell.exe
 
-    - name: ✅ Deployment Done
-      ansible.builtin.debug:
-        msg: "✅ Evaluate-STIG deployed to {{ stig_local_path }}"
+  - name: ✅ Scan Completed
+    ansible.builtin.debug:
+      msg: "STIG Scan complete on {{ inventory_hostname }}"
 
-    ###################################################################
-    # RUN STIG SCAN (your dotnet test speed config)
-    ###################################################################
-    - name: ▶️ Run Evaluate-STIG scan
-      ansible.windows.win_shell: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        Set-Location "{{ stig_local_path }}"
-        .\Evaluate-STIG.ps1 -selectstig dotnet4 -Output "CKL,CSV"
-      args:
-        executable: PowerShell.exe
+  ###################################################################
+  # 3) Determine group name for correct share folder
+  ###################################################################
+  - name: Determine inventory group name for results directory
+    set_fact:
+      stig_results_role: "{{ group_names[0] }}"
 
-    - name: ✅ Scan Done
-      ansible.builtin.debug:
-        msg: "✅ STIG Scan complete on {{ inventory_hostname }}"
+  ###################################################################
+  # 4) Copy Results Folder (exact folder name preserved)
+  ###################################################################
+  - name: 📤 Copy STIG results to SMB share (no rename)
+    ansible.windows.win_powershell:
+      script: |
+        $localRoot = "{{ stig_results_local }}"
+        $hostnameFolder = (Get-ChildItem $localRoot | Where-Object { $_.PSIsContainer }).Name
+        $localPath = Join-Path $localRoot $hostnameFolder
 
-    ###################################################################
-    # COPY RESULTS → SHARE
-    ###################################################################
-    - name: 🗂 Determine role name folder (based on inventory group)
-      set_fact:
-        stig_role_folder: "{{ group_names[0] | lower }}"
+        $roleFolder = "{{ stig_results_role }}"
+        $shareRoot = "\\192.168.10.198\STIG-Results\$roleFolder"
 
-    - name: Ensure SMB destination folder exists
-      ansible.windows.win_powershell:
-        script: |
-          $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+        $sec = ConvertTo-SecureString "{{ SMB_PASSWORD }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ("{{ SMB_USERNAME }}", $sec)
 
-          New-PSDrive -Name R -PSProvider FileSystem -Root "{{ results_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+        New-PSDrive -Name R -PSProvider FileSystem -Root "\\192.168.10.198\STIG-Results" -Credential $cred -ErrorAction Stop | Out-Null
 
-          $path = "R:\\{{ stig_role_folder }}\\{{ inventory_hostname }}"
-          if (-not (Test-Path $path)) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
+        if (!(Test-Path "R:\$roleFolder")) {
+          New-Item -ItemType Directory -Path "R:\$roleFolder" -Force | Out-Null
+        }
 
-          Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+        Copy-Item "$localPath" "R:\$roleFolder" -Recurse -Force
 
-    - name: 📤 Copy STIG results to SMB share
-      ansible.windows.win_powershell:
-        script: |
-          $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+        Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
 
-          New-PSDrive -Name R -PSProvider FileSystem -Root "{{ results_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
-
-          Copy-Item "{{ stig_results_path }}\\{{ inventory_hostname }}\\Checklist\\*" `
-            "R:\\{{ stig_role_folder }}\\{{ inventory_hostname }}\\" -Recurse -Force
-
-          Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
-
-    - name: ✅ Summary
-      debug:
-        msg:
-          - "✅ Completed on: {{ inventory_hostname }}"
-          - "📁 Source: {{ stig_results_path }}\\{{ inventory_hostname }}\\Checklist"
-          - "📤 Uploaded to: {{ results_share_root }}\\{{ stig_role_folder }}\\{{ inventory_hostname }}"
+  ###################################################################
+  # 5) Summary Output
+  ###################################################################
+  - name: ✅ Summary
+    ansible.builtin.debug:
+      msg:
+        - "Completed on: {{ inventory_hostname }}"
+        - "Local Source: {{ stig_results_local }}"
+        - "Uploaded to: \\192.168.10.198\\STIG-Results\\{{ stig_results_role }}"
