@@ -1,79 +1,93 @@
 ---
 - name: Full STIG Pipeline (Prep → Scan → Upload)
   hosts: all
-  gather_facts: no
+  gather_facts: yes   # <— required so $env:COMPUTERNAME resolves cleanly
 
   vars:
-    stig_version: "Evaluate-STIG_1.2507.5"
-    eval_stig_source: "\\\\192.168.10.198\\Evaluate-STIG\\{{ stig_version }}"
-    eval_stig_dest: "C:\\ProgramData\\{{ stig_version }}"
-    stig_results_local: "C:\\Users\\Public\\Documents\\STIG_Compliance"
-    smb_share_root: "\\\\192.168.10.198\\STIG-Results"
+    stig_version: Evaluate-STIG_1.2507.5
+    stig_share_path: "\\192.168.10.198\\Evaluate-STIG\\{{ stig_version }}"
+    stig_local_path: "C:\\ProgramData\\{{ stig_version }}"
+    stig_results_root: "C:\\Users\\Public\\Documents\\STIG_Compliance"
+    share_root: "\\192.168.10.198\\STIG-Results"
+
+    # Map group to destination folder
+    # (this works because your inventory is grouped properly)
+    role_folder: "{{ group_names[0] }}"
+
+    smb_user_effective: "{{ smb_user | default(smb_username) }}"
+    smb_pass_effective: "{{ smb_pass | default(smb_password) }}"
 
   tasks:
 
-    ###################################################################
-    # PREP — fresh deployment
-    ###################################################################
-    - name: 🚀 Remove existing Evaluate-STIG directory
-      ansible.windows.win_powershell:
-        script: |
-          if (Test-Path "{{ eval_stig_dest }}") {
-            Remove-Item "{{ eval_stig_dest }}" -Recurse -Force -ErrorAction SilentlyContinue
-          }
+  ###################################################################
+  # PREP: Recopy Evaluate-STIG every run (always clean)
+  ###################################################################
+  - name: 🚀 Remove existing Evaluate-STIG directory
+    ansible.windows.win_powershell:
+      script: |
+        if (Test-Path "{{ stig_local_path }}") {
+          Remove-Item "{{ stig_local_path }}" -Recurse -Force -ErrorAction SilentlyContinue
+        }
 
-    - name: Create Evaluate-STIG directory
-      ansible.windows.win_file:
-        path: "{{ eval_stig_dest }}"
-        state: directory
+  - name: Create Evaluate-STIG directory
+    ansible.windows.win_file:
+      path: "{{ stig_local_path }}"
+      state: directory
 
-    - name: Copy Evaluate-STIG to host (fresh deployment)
-      ansible.windows.win_powershell:
-        script: |
-          $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
+  - name: Copy Evaluate-STIG to host (fresh deployment)
+    ansible.windows.win_powershell:
+      script: |
+        $sec = ConvertTo-SecureString "{{ ansible_password }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential ("{{ ansible_user }}", $sec)
 
-          New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ eval_stig_source }}" -Credential $cred -ErrorAction Stop | Out-Null
-          Copy-Item "Z:\*" "{{ eval_stig_dest }}" -Recurse -Force
-          Remove-PSDrive -Name Z -Force -ErrorAction SilentlyContinue
+        New-PSDrive -Name Z -PSProvider FileSystem -Root "{{ stig_share_path }}" -Credential $cred -ErrorAction Stop | Out-Null
+        Copy-Item "Z:\*" "{{ stig_local_path }}" -Recurse -Force
+        Remove-PSDrive -Name Z -Force -ErrorAction SilentlyContinue
 
-    ###################################################################
-    # RUN SCAN
-    ###################################################################
-    - name: ▶️ Run Evaluate-STIG scan (CKL + CSV)
-      ansible.windows.win_powershell:
-        script: |
-          Set-Location "{{ eval_stig_dest }}"
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          .\Evaluate-STIG.ps1 -selectstig dotnet4 -Output "CKL,CSV" -ResultsPath "{{ stig_results_local }}"
+  ###################################################################
+  # RUN SCAN
+  ###################################################################
+  - name: ▶️ Run Evaluate-STIG scan (CKL + CSV)
+    ansible.windows.win_shell: |
+      Set-ExecutionPolicy Bypass -Scope Process -Force
+      Set-Location "{{ stig_local_path }}"
+      .\Evaluate-STIG.ps1 -Output "CKL,CSV"
+    args:
+      executable: PowerShell.exe
 
-    - name: ✅ Scan Done
-      ansible.builtin.debug:
-        msg: "✅ STIG Scan complete on {{ inventory_hostname }}"
+  - name: ✅ Scan Done
+    debug:
+      msg: "✅ STIG Scan complete on {{ inventory_hostname }}"
 
-    ###################################################################
-    # COPY RESULTS TO SHARE
-    ###################################################################
-    - name: 📤 Copy STIG Results to SMB Share
-      ansible.windows.win_powershell:
-        script: |
-          $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $sec)
+  ###################################################################
+  # COPY RESULTS TO SHARE (Your proven working block)
+  ###################################################################
+  - name: 📤 Copy STIG Results to SMB Share
+    ansible.windows.win_shell: |
+      $srcRoot = '{{ stig_results_root }}'
+      $hostName = $env:COMPUTERNAME
+      $src = Join-Path $srcRoot $hostName
+      $srcChecklist = Join-Path $src 'Checklist'
 
-          New-PSDrive -Name R -PSProvider FileSystem -Root "{{ smb_share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
+      if (-not (Test-Path $srcChecklist)) { throw "No Evaluate-STIG results at $srcChecklist" }
 
-          $source = "{{ stig_results_local }}\\{{ ansible_hostname }}"
-          $dest = "R:\\workstations\\{{ ansible_hostname }}"
+      $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
+      $cred = New-Object System.Management.Automation.PSCredential '{{ smb_user_effective }}', $sec
+      New-PSDrive -Name R -PSProvider FileSystem -Root '{{ share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
 
-          if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
+      $rolePath = Join-Path 'R:\' '{{ role_folder }}'
+      $destHost = Join-Path $rolePath $hostName
 
-          Copy-Item $source\* $dest -Recurse -Force
+      if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
+      if (-not (Test-Path $destHost)) { New-Item -ItemType Directory -Path $destHost -Force | Out-Null }
 
-          Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+      Copy-Item (Join-Path $src 'Checklist\*') $destHost -Recurse -Force
 
-    - name: ✅ Summary
-      ansible.builtin.debug:
-        msg:
-          - "Completed on: {{ inventory_hostname }}"
-          - "Local Results: {{ stig_results_local }}\\{{ ansible_hostname }}"
-          - "Uploaded To: {{ smb_share_root }}\\workstations\\{{ ansible_hostname }}"
+      Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+
+    args:
+      executable: PowerShell.exe
+
+  - name: ✅ Upload Complete
+    debug:
+      msg: "📤 Uploaded to {{ share_root }}\\{{ role_folder }}\\{{ ansible_env.COMPUTERNAME }}"
