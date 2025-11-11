@@ -59,23 +59,24 @@
     debug:
       msg: "✅ STIG Scan complete on {{ inventory_hostname }}"
 
-    ###################################################################
-  # COPY RESULTS TO SHARE
+  ###################################################################
+  # COPY RESULTS TO SHARE (NO TIMESTAMP)
   ###################################################################
   - name: 📤 Copy STIG Results to SMB Share
     ansible.windows.win_powershell:
       script: |
         $srcRoot    = "{{ stig_results_local }}"
         $hostName   = $env:COMPUTERNAME
-        $src        = Join-Path -Path $srcRoot -ChildPath $hostName
+
+        $src = Join-Path -Path $srcRoot -ChildPath $hostName
         $srcChecklist = Join-Path -Path $src -ChildPath "Checklist"
 
         if (-not (Test-Path -Path $srcChecklist)) {
           throw "❌ No Evaluate-STIG results found at $srcChecklist"
         }
 
-        $sec  = ConvertTo-SecureString "{{ smb_pass_effective }}" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential "{{ smb_user_effective }}", $sec
+        $sec  = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential "{{ smb_user }}", $sec
 
         New-PSDrive -Name R -PSProvider FileSystem -Root "{{ share_root }}" -Credential $cred -ErrorAction Stop | Out-Null
 
@@ -89,7 +90,7 @@
 
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
 
-    register: copy_result
+    register: stig_copy_result
 
   - name: ✅ Upload Complete
     debug:
