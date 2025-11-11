@@ -70,22 +70,31 @@
         $src = Join-Path -Path $srcRoot -ChildPath $hostName
 
         if (-not (Test-Path -Path $src)) {
-            throw "❌ No STIG results found in $src"
+            throw "❌ No STIG results found in $src. Run Evaluate-STIG first."
         }
 
         $sec = ConvertTo-SecureString "{{ smb_pass }}" -AsPlainText -Force
         $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_user }}", $sec)
 
+        # Map drive to stig-results share
         New-PSDrive -Name R -PSProvider FileSystem -Root "\\\\192.168.10.198\\stig-results" -Credential $cred -ErrorAction Stop | Out-Null
 
+        # Create host folder under share: R:\<hostname>
         $dest = "R:\\$hostName"
-        if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
+        if (-not (Test-Path $dest)) {
+            New-Item -ItemType Directory -Path $dest -Force | Out-Null
+        }
 
+        # Copy only the Checklist folder contents
         Copy-Item -Path "$src\\Checklist\\*" -Destination $dest -Recurse -Force
 
+        # Unmap drive
         Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
 
-    register: upload_result
+        "✅ Results copied to $dest"
 
-  - debug:
-      msg: "✅ Results uploaded to \\\\192.168.10.198\\stig-results\\{{ ansible_hostname }}"
+    register: copy_results_output
+
+  - name: ✅ Show Upload Result
+    debug:
+      var: copy_results_output.stdout
