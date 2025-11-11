@@ -2,53 +2,58 @@
 - name: Run Evaluate-STIG scan and upload results
   hosts: all
   gather_facts: no
+
   vars:
-    share_path: "\\\\192.168.10.198\\STIG-Results"
-    smb_user: "VoughtNet\\svc-ansible"
-    smb_password: "Luasi965!"
+    # Evaluate-STIG install folder
+    stig_version: "Evaluate-STIG_1.2507.5"
+    stig_workdir: "C:\\ProgramData\\{{ stig_version }}"
+
+    # Where Evaluate-STIG stores results
+    stig_results_local: "C:\\Users\\Public\\Documents\\STIG_Compliance\\{{ inventory_hostname }}\\Checklist"
+
+    # SMB results share (already renamed to the lowercase version)
+    stig_share_results: "\\\\192.168.10.198\\stig-results"
+
+    # SMB credential (AWX credential injected)
+    smb_username: "{{ lookup('env', 'SMB_USERNAME') | default('VoughtNet\\svc-ansible') }}"
+    smb_password: "{{ lookup('env', 'SMB_PASSWORD') }}"
 
   tasks:
 
-    - name: Ensure Evaluate-STIG.ps1 exists
-      ansible.windows.win_stat:
-        path: 'C:\ProgramData\Evaluate-STIG\Evaluate-STIG.ps1'
-      register: stig_script_check
+  ###################################################################
+  # Ensure Evaluate-STIG.ps1 Exists
+  ###################################################################
+  - name: Ensure Evaluate-STIG.ps1 exists
+    ansible.windows.win_stat:
+      path: "{{ stig_workdir }}\\Evaluate-STIG.ps1"
+    register: stig_ps1
 
-    - name: ❌ Fail if Evaluate-STIG.ps1 is missing
-      ansible.builtin.fail:
-        msg: "Evaluate-STIG.ps1 is missing on {{ inventory_hostname }}. Run prep-stig-host first."
-      when: not stig_script_check.stat.exists
+  - name: ❌ Fail if Evaluate-STIG.ps1 is missing
+    ansible.builtin.fail:
+      msg: "Evaluate-STIG.ps1 not found — run Prep first."
+    when: not stig_ps1.stat.exists
 
-    - name: ▶️ Run Evaluate-STIG scan
-      ansible.windows.win_shell: |
-        C:\ProgramData\Evaluate-STIG\Evaluate-STIG.ps1 `
-          -output ckl, csv
-      args:
-        chdir: 'C:\ProgramData\Evaluate-STIG'
+  ###################################################################
+  # Run Evaluate-STIG (uses default output)
+  ###################################################################
+  - name: ▶️ Run Evaluate-STIG scan (CKL + CSV)
+    ansible.windows.win_shell: |
+      Write-Host "Running Evaluate-STIG..."
+      Set-Location "{{ stig_workdir }}"
+      .\Evaluate-STIG.ps1 -Output "CKL,CSV"
+      Write-Host "✅ STIG scan complete."
+    args:
+      executable: PowerShell.exe
 
-    ###################################################################
-    # Determine Group-Based Folder Target
-    ###################################################################
-    - name: Set role folder name based on group
-      set_fact:
-        role_folder: |
-          {% if 'domain_controllers' in group_names %}
-          Domain-Controllers
-          {% elif 'member_servers' in group_names %}
-          Member-Servers
-          {% else %}
-          Workstations
-          {% endif %}
-
-    ###################################################################
-    # Create Share Path + Upload Results
-    ###################################################################
+  ###################################################################
+  # Create \\Share\<Role>\<Hostname>
+  ###################################################################
   - name: Ensure SMB destination folder exists
     ansible.windows.win_shell: |
       $sec = ConvertTo-SecureString "{{ smb_password }}" -AsPlainText -Force
       $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_username }}", $sec)
 
-      New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $cred -Persist -ErrorAction Stop | Out-Null
+      New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $cred -ErrorAction Stop | Out-Null
 
       $rolePath = "R:\\{{ group_names[0] }}"
       $hostPath = "$rolePath\\{{ inventory_hostname }}"
@@ -56,18 +61,32 @@
       if (-not (Test-Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
       if (-not (Test-Path $hostPath)) { New-Item -ItemType Directory -Path $hostPath -Force | Out-Null }
 
+      Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+    args:
+      executable: PowerShell.exe
+
+  ###################################################################
+  # Upload Results (Overwrite / Update — No Timestamp)
+  ###################################################################
   - name: 📤 Copy STIG results to SMB share
     ansible.windows.win_shell: |
       $sec = ConvertTo-SecureString "{{ smb_password }}" -AsPlainText -Force
       $cred = New-Object System.Management.Automation.PSCredential ("{{ smb_username }}", $sec)
 
-      New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $cred -Persist -ErrorAction Stop | Out-Null
+      New-PSDrive -Name R -PSProvider FileSystem -Root "{{ stig_share_results }}" -Credential $cred -ErrorAction Stop | Out-Null
 
-      Copy-Item "{{ stig_results_local }}\\{{ inventory_hostname }}\\Checklist\\*" "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}" -Recurse -Force
+      Copy-Item "{{ stig_results_local }}\\*" "R:\\{{ group_names[0] }}\\{{ inventory_hostname }}" -Recurse -Force
 
+      Remove-PSDrive -Name R -Force -ErrorAction SilentlyContinue
+    args:
+      executable: PowerShell.exe
 
-    - name: ✅ Summary
-      ansible.builtin.debug:
-        msg:
-          - "✅ STIG Scan completed on {{ inventory_hostname }}."
-          - "📤 Uploaded to: {{ share_path }}\\{{ role_folder }}\\{{ inventory_hostname }}"
+  ###################################################################
+  # Summary
+  ###################################################################
+  - name: ✅ Summary
+    debug:
+      msg:
+        - "✅ STIG Scan completed on {{ inventory_hostname }}"
+        - "📁 Local results: {{ stig_results_local }}"
+        - "📤 Uploaded to: {{ stig_share_results }}\\{{ group_names[0] }}\\{{ inventory_hostname }}"
