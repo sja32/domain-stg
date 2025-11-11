@@ -51,7 +51,7 @@
     ansible.windows.win_shell: |
       Set-ExecutionPolicy Bypass -Scope Process -Force
       Set-Location "{{ stig_local_path }}"
-      .\Evaluate-STIG.ps1 -Output "CKL,CSV"
+      .\Evaluate-STIG.ps1 -SelectStig dotnet4 -Output "CKL,CSV"
     args:
       executable: PowerShell.exe
 
