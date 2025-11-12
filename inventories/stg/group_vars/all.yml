@@ -18,3 +18,7 @@ stig_results_local: "C:\\Users\\Public\\Documents\\STIG_Compliance"
 
 # Root of results share
 smb_share_root: "\\\\192.168.10.198\\STIG-Results"
+
+# Path to SummaryReport.xml for each host
+stig_summary_report: "{{ stig_results_local }}\\{{ inventory_hostname }}\\SummaryReport.xml"
+
