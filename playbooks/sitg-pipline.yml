@@ -62,51 +62,51 @@
       ansible.builtin.debug:
         msg: "✅ STIG Scan complete on {{ inventory_hostname }}"
 
-###################################################################
-# UPLOAD: copy **Checklist** and **SummaryReport.xml** results
-# to \\server\STIG-Results\<role>\<host>
-###################################################################
-- name: 📤 Copy STIG Results (Checklist + SummaryReport.xml) to SMB Share
-  no_log: true
-  ansible.windows.win_powershell:
-    script: |
-      $srcRoot   = '{{ stig_results_root }}'
-      $hostName  = $env:COMPUTERNAME
-      $srcHost   = Join-Path -Path $srcRoot -ChildPath $hostName
-      $srcChecks = Join-Path -Path $srcHost -ChildPath 'Checklist'
-      $srcSummary = Join-Path -Path $srcHost -ChildPath 'SummaryReport.xml'
+    ###################################################################
+    # UPLOAD: copy **Checklist** and **SummaryReport.xml** results
+    # to \\server\STIG-Results\<role>\<host>
+    ###################################################################
+    - name: 📤 Copy STIG Results (Checklist + SummaryReport.xml) to SMB Share
+      no_log: true
+      ansible.windows.win_powershell:
+        script: |
+          $srcRoot   = '{{ stig_results_root }}'
+          $hostName  = $env:COMPUTERNAME
+          $srcHost   = Join-Path -Path $srcRoot -ChildPath $hostName
+          $srcChecks = Join-Path -Path $srcHost -ChildPath 'Checklist'
+          $srcSummary = Join-Path -Path $srcHost -ChildPath 'SummaryReport.xml'
 
-      if (-not (Test-Path -Path $srcChecks)) {
-        throw "No Evaluate-STIG results at $srcChecks"
-      }
+          if (-not (Test-Path -Path $srcChecks)) {
+            throw "No Evaluate-STIG results at $srcChecks"
+          }
 
-      $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
-      $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_user_effective }}', $sec)
+          $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_user_effective }}', $sec)
 
-      New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
-      try {
-        $rolePath = Join-Path -Path 'R:\' -ChildPath '{{ role_folder }}'
-        if (-not (Test-Path -Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
+          New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
+          try {
+            $rolePath = Join-Path -Path 'R:\' -ChildPath '{{ role_folder }}'
+            if (-not (Test-Path -Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
 
-        $destHost = Join-Path -Path $rolePath -ChildPath $hostName
-        if (-not (Test-Path -Path $destHost)) { New-Item -ItemType Directory -Path $destHost -Force | Out-Null }
+            $destHost = Join-Path -Path $rolePath -ChildPath $hostName
+            if (-not (Test-Path -Path $destHost)) { New-Item -ItemType Directory -Path $destHost -Force | Out-Null }
 
-        # Copy Checklist folder contents
-        Copy-Item -Path (Join-Path $srcChecks '*') -Destination (Join-Path $destHost 'Checklist') -Recurse -Force
+            # Copy Checklist folder contents
+            Copy-Item -Path (Join-Path $srcChecks '*') -Destination (Join-Path $destHost 'Checklist') -Recurse -Force
 
-        # Copy SummaryReport.xml if it exists
-        if (Test-Path $srcSummary) {
-          Copy-Item -Path $srcSummary -Destination (Join-Path $destHost 'SummaryReport.xml') -Force
-        }
+            # Copy SummaryReport.xml if it exists
+            if (Test-Path $srcSummary) {
+              Copy-Item -Path $srcSummary -Destination (Join-Path $destHost 'SummaryReport.xml') -Force
+            }
 
-        "Copied results and summary to $destHost"
-      } finally {
-        Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
-      }
+            "Copied results and summary to $destHost"
+          } finally {
+            Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
+          }
 
-- name: ✅ Summary
-  ansible.builtin.debug:
-    msg:
-      - "📁 Local results: {{ stig_results_root }}\\{{ ansible_hostname }}\\Checklist"
-      - "🧾 Summary: {{ stig_results_root }}\\{{ ansible_hostname }}\\SummaryReport.xml"
-      - "📤 Uploaded to: {{ smb_share_root }}\\{{ role_folder }}\\{{ ansible_hostname }}"
+    - name: ✅ Summary
+      ansible.builtin.debug:
+        msg:
+          - "📁 Local results: {{ stig_results_root }}\\{{ ansible_hostname }}\\Checklist"
+          - "🧾 Summary: {{ stig_results_root }}\\{{ ansible_hostname }}\\SummaryReport.xml"
+          - "📤 Uploaded to: {{ smb_share_root }}\\{{ role_folder }}\\{{ ansible_hostname }}"
