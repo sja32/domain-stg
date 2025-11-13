@@ -62,40 +62,81 @@
       ansible.builtin.debug:
         msg: "✅ STIG Scan complete on {{ inventory_hostname }}"
 
-    ###################################################################
-    # UPLOAD: copy **Checklist** results to \\server\STIG-Results\<role>\<host>
-    # (No timestamps; keep it simple. Creates missing folders as needed.)
-    ###################################################################
-    - name: 📤 Copy STIG Results to SMB Share
-      no_log: true
-      ansible.windows.win_powershell:
-        script: |
-          $srcRoot   = '{{ stig_results_root }}'
-          $hostName  = $env:COMPUTERNAME
-          $srcHost   = Join-Path -Path $srcRoot -ChildPath $hostName
-          $srcChecks = Join-Path -Path $srcHost -ChildPath 'Checklist'
+     ###################################################################
+     # UPLOAD: copy Evaluate-STIG results to \\server\STIG-Results\<role>\<host>
+     # (Deletes old host folder; copies Checklist + SummaryReport.xml only.)
+     ###################################################################
+    - name: 📤 Copy STIG Results to SMB Share (clean + selective copy)
+    no_log: true
+    ansible.windows.win_powershell:
+    script: |
+      param(
+        [string]$StigRoot,
+        [string]$SmbRoot,
+        [string]$RoleFolder
+      )
 
-          if (-not (Test-Path -Path $srcChecks)) {
-            throw "No Evaluate-STIG results at $srcChecks"
+      $HostName = $env:COMPUTERNAME
+
+      # Local STIG path for this host
+      $LocalHostPath = Join-Path -Path $StigRoot -ChildPath $HostName
+      if (-not (Test-Path $LocalHostPath)) {
+          throw "Local Evaluate-STIG folder not found: $LocalHostPath"
+      }
+
+      $LocalChecklist = Join-Path -Path $LocalHostPath -ChildPath "Checklist"
+      $LocalSummary   = Join-Path -Path $LocalHostPath -ChildPath "SummaryReport.xml"
+
+      if (-not (Test-Path $LocalChecklist)) {
+          throw "Checklist folder not found at $LocalChecklist"
+      }
+      if (-not (Test-Path $LocalSummary)) {
+          throw "SummaryReport.xml not found at $LocalSummary"
+      }
+
+      # SMB Authentication
+      $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
+      $cred = New-Object System.Management.Automation.PSCredential('{{ smb_user_effective }}', $sec)
+
+      # Mount SMB share as drive R:
+      New-PSDrive -Name 'R' -PSProvider FileSystem -Root $SmbRoot -Credential $cred -ErrorAction Stop | Out-Null
+
+      try {
+          # Build role folder path on the SMB share
+          $RolePath = Join-Path -Path 'R:\' -ChildPath $RoleFolder
+          if (-not (Test-Path $RolePath)) { New-Item -ItemType Directory -Path $RolePath -Force | Out-Null }
+
+          # Build host folder path
+          $DestHost = Join-Path -Path $RolePath -ChildPath $HostName
+
+          # DELETE old host folder
+          if (Test-Path $DestHost) {
+              Write-Host "Removing old host folder at $DestHost"
+              Remove-Item -Path $DestHost -Recurse -Force -ErrorAction SilentlyContinue
           }
 
-          $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_user_effective }}', $sec)
+          # Recreate clean destination
+          New-Item -ItemType Directory -Path $DestHost -Force | Out-Null
 
-          New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
-          try {
-            $rolePath = Join-Path -Path 'R:\' -ChildPath '{{ role_folder }}'
-            if (-not (Test-Path -Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
+          # Copy ONLY the Checklist folder
+          $DestChecklist = Join-Path -Path $DestHost -ChildPath 'Checklist'
+          Write-Host "Copying Checklist folder to $DestChecklist"
+          Copy-Item -Path $LocalChecklist -Destination $DestChecklist -Recurse -Force
 
-            $destHost = Join-Path -Path $rolePath -ChildPath $hostName
-            if (-not (Test-Path -Path $destHost)) { New-Item -ItemType Directory -Path $destHost -Force | Out-Null }
+          # Copy ONLY SummaryReport.xml
+          $DestSummary = Join-Path -Path $DestHost -ChildPath 'SummaryReport.xml'
+          Write-Host "Copying SummaryReport.xml to $DestSummary"
+          Copy-Item -Path $LocalSummary -Destination $DestSummary -Force
 
-            # Copy the folder contents exactly as they exist locally
-            Copy-Item -Path (Join-Path $srcHost 'Checklist\*') -Destination $destHost -Recurse -Force
-            "Copied to $destHost"
-          } finally {
-            Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
-          }
+          Write-Host "Copy completed for $HostName"
+      }
+      finally {
+          Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
+      }
+    parameters:
+      StigRoot: "{{ stig_results_root }}"
+      SmbRoot: "{{ smb_share_root }}"
+      RoleFolder: "{{ role_folder }}"
 
     - name: ✅ Summary
       ansible.builtin.debug:
