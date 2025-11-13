@@ -50,11 +50,11 @@
     ###################################################################
     # SCAN: run Evaluate-STIG (CKL + CSV) with execution policy bypass
     ###################################################################
-    - name: ▶️ Run Evaluate-STIG scan (CKL + CSV)
+    - name: ▶️ Run Evaluate-STIG scan (CKL + CSV + Summary)
       ansible.windows.win_shell: |
         Set-ExecutionPolicy Bypass -Scope Process -Force
         Set-Location "C:\ProgramData\{{ stig_version }}"
-        .\Evaluate-STIG.ps1 -Output "CKL,CSV, Summary"
+        .\Evaluate-STIG.ps1 -selectstig dotnet4 -Output "CKL,CSV,Summary"
       args:
         executable: PowerShell.exe
 
@@ -63,10 +63,10 @@
         msg: "✅ STIG Scan complete on {{ inventory_hostname }}"
 
     ###################################################################
-    # UPLOAD: copy **Checklist** and **SummaryReport.xml** results
-    # to \\server\STIG-Results\<role>\<host>
+    # UPLOAD: copy **Checklist** results to \\server\STIG-Results\<role>\<host>
+    # (No timestamps; keep it simple. Creates missing folders as needed.)
     ###################################################################
-    - name: 📤 Copy STIG Results (Checklist + SummaryReport.xml) to SMB Share
+    - name: 📤 Copy STIG Results to SMB Share
       no_log: true
       ansible.windows.win_powershell:
         script: |
@@ -74,7 +74,6 @@
           $hostName  = $env:COMPUTERNAME
           $srcHost   = Join-Path -Path $srcRoot -ChildPath $hostName
           $srcChecks = Join-Path -Path $srcHost -ChildPath 'Checklist'
-          $srcSummary = Join-Path -Path $srcHost -ChildPath 'SummaryReport.xml'
 
           if (-not (Test-Path -Path $srcChecks)) {
             throw "No Evaluate-STIG results at $srcChecks"
@@ -91,15 +90,9 @@
             $destHost = Join-Path -Path $rolePath -ChildPath $hostName
             if (-not (Test-Path -Path $destHost)) { New-Item -ItemType Directory -Path $destHost -Force | Out-Null }
 
-            # Copy Checklist folder contents
-            Copy-Item -Path (Join-Path $srcChecks '*') -Destination (Join-Path $destHost 'Checklist') -Recurse -Force
-
-            # Copy SummaryReport.xml if it exists
-            if (Test-Path $srcSummary) {
-              Copy-Item -Path $srcSummary -Destination (Join-Path $destHost 'SummaryReport.xml') -Force
-            }
-
-            "Copied results and summary to $destHost"
+            # Copy the folder contents exactly as they exist locally
+            Copy-Item -Path (Join-Path $srcHost 'Checklist\*') -Destination $destHost -Recurse -Force
+            "Copied to $destHost"
           } finally {
             Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
           }
@@ -108,5 +101,4 @@
       ansible.builtin.debug:
         msg:
           - "📁 Local results: {{ stig_results_root }}\\{{ ansible_hostname }}\\Checklist"
-          - "🧾 Summary: {{ stig_results_root }}\\{{ ansible_hostname }}\\SummaryReport.xml"
           - "📤 Uploaded to: {{ smb_share_root }}\\{{ role_folder }}\\{{ ansible_hostname }}"
