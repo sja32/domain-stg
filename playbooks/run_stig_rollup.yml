@@ -5,6 +5,9 @@
 
   vars:
     ansible_remote_tmp: "/tmp/ansible-tmp"
+    ansible_connection: local
+    ansible_shell_type: bash
+    ansible_shell_executable: /bin/bash
 
   vars_files:
     - "../vars/stig_settings.yml"
@@ -13,10 +16,10 @@
     #Linux controller-only folder creation (no Powershell)
     - name: Ensure AWX tmp folder exists (Linux controller)
       ansible.builtin.file:
-        path: "{{ ansible_remote_tmp}}"
+        path: "/tmp/ansible-tmp"
         state: directory
         mode: "1777"
-      delegate_to: localhost
+      
 
     - name: 🔍 Show loaded STIG rollup settings
       debug:
