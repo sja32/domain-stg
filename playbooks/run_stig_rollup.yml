@@ -10,10 +10,10 @@
     - "../vars/stig_settings.yml"
 
   tasks:
-
-    - name: Ensure AWX tmp folder exists
+    #Linux controller-only folder creation (no Powershell)
+    - name: Ensure AWX tmp folder exists (Linux controller)
       ansible.builtin.file:
-        path: "/tmp/ansible-tmp"
+        path: "{{ ansible_remote_tmp}}"
         state: directory
         mode: "1777"
       delegate_to: localhost
