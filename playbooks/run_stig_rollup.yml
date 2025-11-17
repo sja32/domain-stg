@@ -3,10 +3,20 @@
   hosts: localhost
   gather_facts: false
 
+  vars:
+    ansible_remote_tmp: "/tmp/ansible-tmp"
+
   vars_files:
     - "../vars/stig_settings.yml"
 
   tasks:
+
+    - name: Ensure AWX tmp folder exists
+      ansible.builtin.file:
+        path: "/tmp/ansible-tmp"
+        state: directory
+        mode: "1777"
+      delegate_to: localhost
 
     - name: 🔍 Show loaded STIG rollup settings
       debug:
