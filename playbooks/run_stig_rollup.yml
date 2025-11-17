@@ -6,9 +6,7 @@
   vars:
     ansible_remote_tmp: "/tmp/ansible-tmp"
     ansible_connection: local
-    #ansible_shell_type: bash
-    #ansible_shell_executable: /bin/bash
-
+ 
   vars_files:
     - "../vars/stig_settings.yml"
 
