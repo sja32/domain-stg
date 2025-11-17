@@ -45,6 +45,7 @@
     ###########################################################################
     - name: 🔄 Process each STIG role folder
       include_tasks: "tasks/process_role.yml"
+      loop: "{{ stig_roles }}"
       loop_control:
         loop_var: role_name
       
