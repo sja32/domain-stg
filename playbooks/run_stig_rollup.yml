@@ -1,5 +1,5 @@
 ---
-- name: Run STIG Rollup (Full PowerShell)
+- name: Run STIG Rollup for all roles (controller-side, PowerShell only)
   hosts: localhost
   gather_facts: false
 
@@ -8,49 +8,50 @@
 
   tasks:
 
-    - name: 🔍 Show loaded STIG settings
+    - name: 🔍 Show loaded STIG rollup settings
       debug:
         msg:
+          - "PowerShell: {{ powershell_path }}"
           - "Share Root: {{ stig_share_root }}"
           - "Roles: {{ stig_roles }}"
-          - "Master Report Path: {{ stig_master_report_path }}"
+          - "Master Report Path (future use): {{ stig_master_report_path }}"
 
     ###################################################################
-    # 1) Ensure master report folder exists (PowerShell)
+    # 1) Ensure master report folder exists (optional, future use)
     ###################################################################
     - name: 📁 Ensure master report folder exists (PowerShell)
       ansible.builtin.command: >
-        powershell.exe -ExecutionPolicy Bypass
+        {{ powershell_path }} -ExecutionPolicy Bypass
         -Command "New-Item -ItemType Directory -Force -Path '{{ stig_master_report_path }}' | Out-Null"
-      delegate_to: 127.0.0.1
+      changed_when: false
 
     ###################################################################
-    # 2) Ensure role folders exist (PowerShell)
+    # 2) Ensure role folders exist under the share (defensive)
     ###################################################################
-    - name: 📁 Ensure role folders exist (PowerShell)
+    - name: 📁 Ensure role folders exist under {{ stig_share_root }} (PowerShell)
       ansible.builtin.command: >
-        powershell.exe -ExecutionPolicy Bypass
+        {{ powershell_path }} -ExecutionPolicy Bypass
         -Command "New-Item -ItemType Directory -Force -Path '{{ stig_share_root }}\\{{ item }}' | Out-Null"
       loop: "{{ stig_roles }}"
-      delegate_to: 127.0.0.1
+      changed_when: false
 
     ###################################################################
-    # 3) Run STIG Rollup PowerShell script
+    # 3) Run your existing StigRollupReport.ps1 once per role
     ###################################################################
-    - name: ▶ Run STIG Rollup PowerShell script
+    - name: ▶ Run STIG rollup for each role (PowerShell)
       ansible.builtin.command: >
-        powershell.exe -ExecutionPolicy Bypass
-        -File "{{ playbook_dir }}/../scripts/stig-rollup-report.ps1"
+        {{ powershell_path }} -ExecutionPolicy Bypass
+        -File "{{ playbook_dir }}/../scripts/StigRollupReport.ps1"
         -ShareRoot "{{ stig_share_root }}"
-        -Roles "{{ stig_roles | join(',') }}"
-        -MasterReport "{{ stig_master_report_path }}"
+        -RoleName "{{ item }}"
+        -OutputName "STIG-Rollup.html"
+      loop: "{{ stig_roles }}"
       register: rollup_output
       changed_when: false
-      delegate_to: 127.0.0.1
 
     ###################################################################
-    # 4) Display PowerShell output for debugging
+    # 4) Display output from the last PowerShell call (for logs)
     ###################################################################
-    - name: 🖥️ Display PS output
+    - name: 🖥️ Show PowerShell rollup output (last run)
       debug:
-        var: rollup_output.stdout_lines
+        var: rollup_output.results[-1].stdout_lines
