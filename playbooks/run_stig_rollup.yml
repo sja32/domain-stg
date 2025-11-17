@@ -52,4 +52,6 @@
     ###########################################################################
     # DONE
     ###########################################################################
-    - name: 🎉 All rollups complet
+    - name: 🎉 All rollups complete
+      debug:
+        msg: "STIG Rollup HTML reports generated and uploaded successfully."
