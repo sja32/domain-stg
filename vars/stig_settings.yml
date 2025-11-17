@@ -1,5 +1,5 @@
 # Where all STIG CKLs and role folders live
-stig_share_root: "\\192.168.10.198\STIG-Results"
+stig_share_root: '\\192.168.10.198\STIG-Results'
 
 # STIG roles we want to roll up
 stig_roles:
@@ -8,9 +8,7 @@ stig_roles:
   - workstations
 
 # (Reserved for future master dashboard script)
-stig_master_report_path: "\\192.168.10.198\STIG-Results\Reports"
+stig_master_report_path: '\\192.168.10.198\STIG-Results\Reports'
 
 # PowerShell command used on the controller:
-# - In your LAB AWX (Linux):   pwsh
-# - If you ever use Windows-based controller: powershell.exe
-powershell_path: "pwsh"
+powershell_path: 'pwsh'
