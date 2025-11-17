@@ -35,8 +35,8 @@
     ###########################################################################
     - name: 📁 Ensure master report folder exists (Reports/)
       command: >
-        smbclient "{{ stig_share_root }}" "{{ password }}"
-        -U "{{ username }}"
+        smbclient "{{ stig_share_root }}" "{{ smb_password }}"
+        -U "{{ smb_username }}"
         -c "mkdir Reports"
       ignore_errors: yes
 
