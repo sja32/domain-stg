@@ -1,4 +1,5 @@
 ---
+# Run STIG Rollup for all roles (Linux controller only)
 - name: Run STIG Rollup for all roles (Linux controller only)
   hosts: localhost
   gather_facts: false
@@ -46,10 +47,9 @@
       include_tasks: "tasks/process_role.yml"
       loop: "{{ stig_roles }}"
       loop_control:
-      
+        loop_var: role_name
+
     ###########################################################################
     # DONE
     ###########################################################################
-    - name: 🎉 All rollups complete
-      debug:
-        msg: "STIG Rollup HTML reports generated and uploaded successfully."
+    - name: 🎉 All rollups complet
