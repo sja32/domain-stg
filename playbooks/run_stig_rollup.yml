@@ -27,7 +27,7 @@
           - "Share Root: {{ stig_share_root }}"
           - "Roles: {{ stig_roles }}"
           - "Master Report Path: {{ stig_master_report_path }}"
-          - "Using pure Linux-mode SMB tools"
+          - "Using pure Linux-mode SMB tools (username/password from AWX credential)"
 
     ###########################################################################
     # ENSURE MASTER REPORT FOLDER EXISTS ON SMB SHARE
@@ -41,3 +41,12 @@
 
 
     ###########################################################################
+    # LOOP THROUGH ROLES AND PROCESS EACH ONE
+    ###########################################################################
+    - name: 🔄 Process each STIG role folder
+      with_items: "{{ stig_roles }}"
+      loop_control:
+        loop_var: role_name
+      block:
+
+        #################
