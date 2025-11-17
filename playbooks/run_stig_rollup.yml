@@ -1,68 +1,99 @@
 ---
-- name: Run STIG Rollup for all roles (controller-side, PowerShell only)
+- name: Run STIG Rollup for all roles (Linux controller only)
   hosts: localhost
   gather_facts: false
 
-  vars:
-    ansible_remote_tmp: "/tmp/ansible-tmp"
-    ansible_connection: local
- 
   vars_files:
-    - "../vars/stig_settings.yml"
+    - ../vars/stig_settings.yml
+
+  vars:
+    tmp_root: "/tmp/stig_rollup"
+    report_timestamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}"
 
   tasks:
-    #Linux controller-only folder creation (no Powershell)
+
+    ###########################################################################
+    # PREP TEMP FOLDER
+    ###########################################################################
     - name: Ensure AWX tmp folder exists (Linux controller)
-      ansible.builtin.file:
-        path: "/tmp/ansible-tmp"
+      file:
+        path: "{{ tmp_root }}"
         state: directory
-        mode: "1777"
-      
+        mode: "0755"
 
     - name: 🔍 Show loaded STIG rollup settings
       debug:
         msg:
-          - "PowerShell: {{ powershell_path }}"
           - "Share Root: {{ stig_share_root }}"
           - "Roles: {{ stig_roles }}"
-          - "Master Report Path (future use): {{ stig_master_report_path }}"
+          - "Master Report Path: {{ stig_master_report_path }}"
+          - "Using pure Linux-mode SMB tools"
 
-    ###################################################################
-    # 1) Ensure master report folder exists (optional, future use)
-    ###################################################################
-    - name: 📁 Ensure master report folder exists (PowerShell)
-      ansible.builtin.command: >
-        {{ powershell_path }} -ExecutionPolicy Bypass
-        -Command "New-Item -ItemType Directory -Force -Path '{{ stig_master_report_path }}' | Out-Null"
-      changed_when: false
+    ###########################################################################
+    # ENSURE MASTER REPORT FOLDER EXISTS (NO POWERSHELL)
+    ###########################################################################
+    - name: 📁 Ensure master report folder exists on SMB share
+      command: >
+        smbclient "{{ stig_share_root }}" "{{ smb_password }}"
+        -U "{{ smb_username }}"
+        -c "mkdir Reports"
+      ignore_errors: yes
 
-    ###################################################################
-    # 2) Ensure role folders exist under the share (defensive)
-    ###################################################################
-    - name: 📁 Ensure role folders exist under {{ stig_share_root }} (PowerShell)
-      ansible.builtin.command: >
-        {{ powershell_path }} -ExecutionPolicy Bypass
-        -Command "New-Item -ItemType Directory -Force -Path '{{ stig_share_root }}\\{{ item }}' | Out-Null"
+    ###########################################################################
+    # LOOP THROUGH ROLES AND BUILD REPORTS
+    ###########################################################################
+    - name: 🔄 Process each STIG role folder
       loop: "{{ stig_roles }}"
-      changed_when: false
+      loop_control:
+        loop_var: role_name
+      block:
 
-    ###################################################################
-    # 3) Run your existing StigRollupReport.ps1 once per role
-    ###################################################################
-    - name: ▶ Run STIG rollup for each role (PowerShell)
-      ansible.builtin.command: >
-        {{ powershell_path }} -ExecutionPolicy Bypass
-        -File "{{ playbook_dir }}/../scripts/StigRollupReport.ps1"
-        -ShareRoot "{{ stig_share_root }}"
-        -RoleName "{{ item }}"
-        -OutputName "STIG-Rollup.html"
-      loop: "{{ stig_roles }}"
-      register: rollup_output
-      changed_when: false
+        - name: 📂 Ensure role exists on SMB share
+          command: >
+            smbclient "{{ stig_share_root }}" "{{ smb_password }}"
+            -U "{{ smb_username }}"
+            -c "ls {{ role_name }}"
+          register: role_check
+          failed_when: false
 
-    ###################################################################
-    # 4) Display output from the last PowerShell call (for logs)
-    ###################################################################
-    - name: 🖥️ Show PowerShell rollup output (last run)
+        - name: ❌ Fail if role folder does not exist
+          fail:
+            msg: "Role folder not found on SMB share: {{ role_name }}"
+          when: "'NT_STATUS_OBJECT_NAME_NOT_FOUND' in role_check.stderr"
+
+        #######################################################################
+        # DOWNLOAD RESULTS FROM SMB SHARE
+        #######################################################################
+        - name: 📨 Sync role folder from SMB to controller
+          synchronize:
+            mode: pull
+            src: "{{ stig_share_root }}/{{ role_name }}"
+            dest: "{{ tmp_root }}/"
+            rsync_opts:
+              - "--chmod=755"
+            rsync_path: "rsync"
+          delegate_to: localhost
+
+        #######################################################################
+        # GENERATE HTML REPORT (LINUX, NO POWERSHELL)
+        #######################################################################
+        - name: 📊 Generate HTML rollup report
+          template:
+            src: "../templates/rollup_report.j2"
+            dest: "{{ tmp_root }}/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html"
+
+        #######################################################################
+        # UPLOAD REPORT BACK TO SMB SHARE
+        #######################################################################
+        - name: ⬆️ Upload rollup report to SMB share
+          command: >
+            smbclient "{{ stig_share_root }}" "{{ smb_password }}"
+            -U "{{ smb_username }}"
+            -c "put {{ tmp_root }}/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html Reports/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html"
+
+    ###########################################################################
+    # DONE
+    ###########################################################################
+    - name: 🎉 All rollups complete
       debug:
-        var: rollup_output.results[-1].stdout_lines
+        msg: "STIG Rollup HTML reports generated and uploaded successfully."
