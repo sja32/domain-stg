@@ -6,4 +6,3 @@ stig_roles:
   - workstations
 
 stig_master_report_path: "\\192.168.10.198\STIG-Results\Reports"
-
