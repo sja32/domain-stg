@@ -1,0 +1,48 @@
+# tasks/process_role.yml
+---
+
+#######################################################################
+# CHECK ROLE FOLDER EXISTS
+#######################################################################
+- name: 📂 Check if role folder exists on SMB share
+  command: >
+    smbclient "{{ stig_share_root }}" "{{ password }}"
+    -U "{{ username }}"
+    -c "ls {{ role_name }}"
+  register: role_check
+  failed_when: false
+
+- name: ❌ Fail if role folder is missing
+  fail:
+    msg: "Role folder does not exist on SMB share: {{ role_name }}"
+  when: "'NT_STATUS_OBJECT_NAME_NOT_FOUND' in role_check.stderr"
+
+#######################################################################
+# DOWNLOAD ROLE FOLDER LOCALLY
+#######################################################################
+- name: 📨 Sync role folder from SMB to controller
+  synchronize:
+    mode: pull
+    src: "{{ stig_share_root }}/{{ role_name }}"
+    dest: "{{ tmp_root }}/"
+    rsync_opts:
+      - "--chmod=755"
+    rsync_path: "rsync"
+  delegate_to: localhost
+
+#######################################################################
+# GENERATE HTML REPORT LOCALLY
+#######################################################################
+- name: 📊 Generate HTML rollup report
+  template:
+    src: "../templates/rollup_report.j2"
+    dest: "{{ tmp_root }}/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html"
+
+#######################################################################
+# UPLOAD REPORT BACK TO SMB SHARE
+#######################################################################
+- name: ⬆️ Upload HTML rollup report back to SMB share
+  command: >
+    smbclient "{{ stig_share_root }}" "{{ password }}"
+    -U "{{ username }}"
+    -c "put {{ tmp_root }}/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html Reports/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html"
