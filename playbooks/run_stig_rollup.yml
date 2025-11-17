@@ -1,1 +1,56 @@
+---
+- name: Run STIG Rollup (Full PowerShell)
+  hosts: localhost
+  gather_facts: false
 
+  vars_files:
+    - "../vars/stig_settings.yml"
+
+  tasks:
+
+    - name: 🔍 Show loaded STIG settings
+      debug:
+        msg:
+          - "Share Root: {{ stig_share_root }}"
+          - "Roles: {{ stig_roles }}"
+          - "Master Report Path: {{ stig_master_report_path }}"
+
+    ###################################################################
+    # 1) Ensure master report folder exists (PowerShell)
+    ###################################################################
+    - name: 📁 Ensure master report folder exists (PowerShell)
+      ansible.builtin.command: >
+        powershell.exe -ExecutionPolicy Bypass
+        -Command "New-Item -ItemType Directory -Force -Path '{{ stig_master_report_path }}' | Out-Null"
+      delegate_to: 127.0.0.1
+
+    ###################################################################
+    # 2) Ensure role folders exist (PowerShell)
+    ###################################################################
+    - name: 📁 Ensure role folders exist (PowerShell)
+      ansible.builtin.command: >
+        powershell.exe -ExecutionPolicy Bypass
+        -Command "New-Item -ItemType Directory -Force -Path '{{ stig_share_root }}\\{{ item }}' | Out-Null"
+      loop: "{{ stig_roles }}"
+      delegate_to: 127.0.0.1
+
+    ###################################################################
+    # 3) Run STIG Rollup PowerShell script
+    ###################################################################
+    - name: ▶ Run STIG Rollup PowerShell script
+      ansible.builtin.command: >
+        powershell.exe -ExecutionPolicy Bypass
+        -File "{{ playbook_dir }}/../scripts/stig-rollup-report.ps1"
+        -ShareRoot "{{ stig_share_root }}"
+        -Roles "{{ stig_roles | join(',') }}"
+        -MasterReport "{{ stig_master_report_path }}"
+      register: rollup_output
+      changed_when: false
+      delegate_to: 127.0.0.1
+
+    ###################################################################
+    # 4) Display PowerShell output for debugging
+    ###################################################################
+    - name: 🖥️ Display PS output
+      debug:
+        var: rollup_output.stdout_lines
