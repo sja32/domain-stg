@@ -44,11 +44,10 @@
     # LOOP THROUGH ROLES AND PROCESS EACH ONE
     ###########################################################################
     - name: 🔄 Process each STIG role folder
-      with_items: "{{ stig_roles }}"
+      include_tasks: "tasks/process_role.yml"
       loop_control:
         loop_var: role_name
-      block:
-
+      
         #######################################################################
         # CHECK ROLE FOLDER EXISTS
         #######################################################################
