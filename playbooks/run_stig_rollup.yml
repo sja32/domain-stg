@@ -30,100 +30,14 @@
           - "Using pure Linux-mode SMB tools"
 
     ###########################################################################
-    # ENSURE MASTER REPORT FOLDER EXISTS (NO POWERSHELL)
+    # ENSURE MASTER REPORT FOLDER EXISTS ON SMB SHARE
     ###########################################################################
-    - name: 📁 Ensure master report folder exists on SMB share
+    - name: 📁 Ensure master report folder exists (Reports/)
       command: >
         smbclient "{{ stig_share_root }}" "{{ smb_password }}"
         -U "{{ smb_username }}"
         -c "mkdir Reports"
       ignore_errors: yes
 
-    ###########################################################################
-    # LOOP THROUGH ROLES AND BUILD REPORTS (valid YAML, no block-loop error)
-    ###########################################################################
-    - name: 🔄 Process each STIG role folder
-      block:
-
-        - name: 📂 Ensure role exists on SMB share
-          command: >
-            smbclient "{{ stig_share_root }}" "{{ smb_password }}"
-            -U "{{ smb_username }}"
-            -c "ls {{ item }}"
-          register: role_check
-          failed_when: false
-
-        - name: ❌ Fail if role folder does not exist
-          fail:
-            msg: "Role folder not found on SMB share: {{ item }}"
-          when: "'NT_STATUS_OBJECT_NAME_NOT_FOUND' in role_check.stderr"
-
-        #######################################################################
-        # DOWNLOAD RESULTS FROM SMB SHARE
-        #######################################################################
-        - name: 📨 Sync role folder from SMB to controller
-          synchronize:
-            mode: pull
-            src: "{{ stig_share_root }}/{{ item }}"
-            dest: "{{ tmp_root }}/"
-            rsync_opts:
-              - "--chmod=755"
-            rsync_path: "rsync"
-          delegate_to: localhost
-
-        #######################################################################
-        # GENERATE HTML REPORT
-        #######################################################################
-        - name: 📊 Generate HTML rollup report
-          template:
-            src: "../templates/rollup_report.j2"
-            dest: "{{ tmp_root }}/STIG-Rollup_{{ item }}_{{ report_timestamp }}.html"
-
-        #######################################################################
-        # UPLOAD REPORT BACK TO SMB SHARE
-        #######################################################################
-        - name: ⬆️ Upload rollup report to SMB share
-          command: >
-            smbclient "{{ stig_share_root }}" "{{ smb_password }}"
-            -U "{{ smb_username }}"
-            -c "put {{ tmp_root }}/STIG-Rollup_{{ item }}_{{ report_timestamp }}.html Reports/STIG-Rollup_{{ item }}_{{ report_timestamp }}.html"
-
-      with_items: "{{ stig_roles }}"
-
-
-        #######################################################################
-        # DOWNLOAD RESULTS FROM SMB SHARE
-        #######################################################################
-        - name: 📨 Sync role folder from SMB to controller
-          synchronize:
-            mode: pull
-            src: "{{ stig_share_root }}/{{ role_name }}"
-            dest: "{{ tmp_root }}/"
-            rsync_opts:
-              - "--chmod=755"
-            rsync_path: "rsync"
-          delegate_to: localhost
-
-        #######################################################################
-        # GENERATE HTML REPORT (LINUX, NO POWERSHELL)
-        #######################################################################
-        - name: 📊 Generate HTML rollup report
-          template:
-            src: "../templates/rollup_report.j2"
-            dest: "{{ tmp_root }}/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html"
-
-        #######################################################################
-        # UPLOAD REPORT BACK TO SMB SHARE
-        #######################################################################
-        - name: ⬆️ Upload rollup report to SMB share
-          command: >
-            smbclient "{{ stig_share_root }}" "{{ smb_password }}"
-            -U "{{ smb_username }}"
-            -c "put {{ tmp_root }}/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html Reports/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html"
 
     ###########################################################################
-    # DONE
-    ###########################################################################
-    - name: 🎉 All rollups complete
-      debug:
-        msg: "STIG Rollup HTML reports generated and uploaded successfully."
