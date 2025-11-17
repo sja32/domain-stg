@@ -6,8 +6,8 @@
 ###########################################################################
 - name: 📂 Check if role folder exists on SMB share
   command: >
-    smbclient "{{ stig_share_root }}" "{{ password }}"
-    -U "{{ username }}"
+    smbclient "{{ stig_share_root }}" "{{ smb_password }}"
+    -U "{{ smb_username }}"
     -c "ls {{ role_name }}"
   register: role_check
   failed_when: false
@@ -43,6 +43,6 @@
 ###########################################################################
 - name: ⬆️ Upload HTML rollup report back to SMB share
   command: >
-    smbclient "{{ stig_share_root }}" "{{ password }}"
-    -U "{{ username }}"
+    smbclient "{{ stig_share_root }}" "{{ smb_password }}"
+    -U "{{ smb_username }}"
     -c "put {{ tmp_root }}/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html Reports/STIG-Rollup_{{ role_name }}_{{ report_timestamp }}.html"
