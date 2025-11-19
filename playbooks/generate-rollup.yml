@@ -1,30 +1,38 @@
 ---
-- name: Generate STIG Rollup Report
+- name: Generate STIG Rollup Reports for All Roles
   hosts: localhost
   gather_facts: no
 
+  # Hardcoded list of roles you want processed every time
   vars:
-    share_root: "{{ share_root }}"
-    role_name: "{{ role_name }}"
-    output_name: "{{ output_name | default('SummaryReport-Rollup.html') }}"
+    share_root: "\\192.168.10.198\STIG-Results"
+    roles:
+      - domain_controllers
+      - member_servers
+      - workstations
+    output_name: "SummaryReport-Rollup.html"
 
   tasks:
+
     - name: Read PowerShell script from file
       ansible.builtin.slurp:
-        src: "{{ playbook_dir }}../scripts/StigRollupReport.ps1"
+        src: "{{ playbook_dir }}/../scripts/StigRollupReport.ps1"
       register: ps_script_raw
 
     - name: Decode script content
       ansible.builtin.set_fact:
         ps_script: "{{ ps_script_raw.content | b64decode }}"
 
-    - name: Run STIG Rollup report
+    - name: Run STIG Rollup for each role
       ansible.windows.win_powershell:
         script: |
           {{ ps_script }}
-          StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ role_name }}" -OutputName "{{ output_name }}"
+          StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ item }}" -OutputName "{{ output_name }}"
+      loop: "{{ roles }}"
+      loop_control:
+        loop_var: item
       register: report_output
 
-    - name: Show result
+    - name: Show results for all roles
       debug:
-        var: report_output.stdout
+        var: report_output
