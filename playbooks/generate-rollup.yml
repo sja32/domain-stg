@@ -3,9 +3,8 @@
   hosts: localhost
   gather_facts: no
 
-  # Hardcoded list of roles you want processed every time
   vars:
-    share_root: "\\192.168.10.198\STIG-Results"
+    share_root: "\\\\192.168.10.198\\STIG-Results"
     roles:
       - domain_controllers
       - member_servers
