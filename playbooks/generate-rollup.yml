@@ -1,6 +1,7 @@
 ---
 - name: Generate STIG Rollup Reports for All Roles
-  hosts: localhost
+  hosts: domain_controllers
+  run_once: true
   gather_facts: no
 
   vars:
