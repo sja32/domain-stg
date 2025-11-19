@@ -1,0 +1,30 @@
+---
+- name: Generate STIG Rollup Report
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    share_root: "{{ share_root }}"
+    role_name: "{{ role_name }}"
+    output_name: "{{ output_name | default('SummaryReport-Rollup.html') }}"
+
+  tasks:
+    - name: Read PowerShell script from file
+      ansible.builtin.slurp:
+        src: "{{ playbook_dir }}/StigRollupReport.ps1"
+      register: ps_script_raw
+
+    - name: Decode script content
+      ansible.builtin.set_fact:
+        ps_script: "{{ ps_script_raw.content | b64decode }}"
+
+    - name: Run STIG Rollup report
+      ansible.windows.win_powershell:
+        script: |
+          {{ ps_script }}
+          StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ role_name }}" -OutputName "{{ output_name }}"
+      register: report_output
+
+    - name: Show result
+      debug:
+        var: report_output.stdout
