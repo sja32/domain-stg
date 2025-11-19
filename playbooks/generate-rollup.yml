@@ -1,18 +1,17 @@
 ---
 - name: Generate STIG Rollup Reports for All Roles
-  hosts: localhost
-  connection: local
+  hosts: domain_controllers     # Pick ANY Windows host in this group
   gather_facts: no
-
+  strategy: free
   vars:
     share_root: "\\\\192.168.10.198\\STIG-Results"
-
     roles:
       - domain_controllers
       - member_servers
       - workstations
 
   tasks:
+
     - name: Read PowerShell script from file
       ansible.builtin.slurp:
         src: "{{ playbook_dir }}/../scripts/StigRollupReport.ps1"
@@ -28,8 +27,3 @@
           {{ ps_script }}
           StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ item }}" -OutputName "STIG-Rollup-{{ item }}.html"
       loop: "{{ roles }}"
-      register: rollup_results
-
-    - name: Show output
-      debug:
-        var: rollup_results
