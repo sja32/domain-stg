@@ -1,19 +1,19 @@
 ---
 - name: Generate STIG Rollup Reports for All Roles
-  hosts: domain_controllers
-  run_once: true
+  hosts: localhost
   gather_facts: no
 
   vars:
+    # Hardcoded SMB share path (escaped properly for PowerShell)
     share_root: "\\\\192.168.10.198\\STIG-Results"
-    roles:
+
+    # List of roles – safe name (NOT using the reserved word 'roles')
+    target_roles:
       - domain_controllers
       - member_servers
       - workstations
-    output_name: "SummaryReport-Rollup.html"
 
   tasks:
-
     - name: Read PowerShell script from file
       ansible.builtin.slurp:
         src: "{{ playbook_dir }}/../scripts/StigRollupReport.ps1"
@@ -27,12 +27,10 @@
       ansible.windows.win_powershell:
         script: |
           {{ ps_script }}
-          StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ item }}" -OutputName "{{ output_name }}"
-      loop: "{{ roles }}"
-      loop_control:
-        loop_var: item
-      register: report_output
+          StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ item }}" -OutputName "STIG-Rollup_{{ item }}.html"
+      loop: "{{ target_roles }}"
+      register: report_outputs
 
-    - name: Show results for all roles
+    - name: Display output summary
       debug:
-        var: report_output
+        var: report_outputs
