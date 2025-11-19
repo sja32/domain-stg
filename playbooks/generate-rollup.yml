@@ -1,45 +1,53 @@
 ---
 # ============================================================================
-#  Generate STIG Rollup Reports
-#  Runs ONLY on the controller inside the Windows EE
+#  Generate STIG Rollup Reports ON THE WINDOWS HOST (not controller)
 # ============================================================================
 
-- name: Generate STIG Rollup Reports for All Roles
-  hosts: localhost
+- name: Generate STIG Rollup Reports
+  hosts: domain_controllers   # <-- OR whichever Windows host you want to run it on
   gather_facts: false
   vars_files:
     - ../vars/stig_settings.yml
 
   vars:
-    script_path: "/var/lib/awx/projects/{{ tower_project_scm_id }}__{{ tower_project_scm_branch }}/scripts/StigRollupReport.ps1"
+    remote_script_dir: "C:\\ProgramData\\StigRollup"
+    remote_script_path: "{{ remote_script_dir }}\\StigRollupReport.ps1"
+    local_script_path: "../scripts/StigRollupReport.ps1"
 
   tasks:
 
-    # ------------------------------------------------------------------------
-    # Validate the PowerShell rollup script exists
-    # ------------------------------------------------------------------------
-    - name: 🔍 Check rollup script exists
-      ansible.builtin.stat:
-        path: "{{ script_path }}"
-      register: ps_script
+    # ----------------------------------------------------------------------
+    # Create folder on Windows host
+    # ----------------------------------------------------------------------
+    - name: Create script folder on Windows host
+      ansible.windows.win_file:
+        path: "{{ remote_script_dir }}"
+        state: directory
 
-    - name: ❌ Fail if script missing
-      ansible.builtin.fail:
-        msg: "Rollup script not found at {{ script_path }}. Fix project path."
-      when: not ps_script.stat.exists
+    # ----------------------------------------------------------------------
+    # Copy script from Git repo → Windows host
+    # ----------------------------------------------------------------------
+    - name: Copy Rollup PS Script to Windows Host
+      ansible.windows.win_copy:
+        src: "{{ local_script_path }}"
+        dest: "{{ remote_script_path }}"
+        force: yes
 
-    # ------------------------------------------------------------------------
-    # Run rollup for each role defined in stig_settings.yml
-    # ------------------------------------------------------------------------
-    - name: 📊 Run STIG rollup for each role
-      ansible.builtin.command: >
-        pwsh -File "{{ script_path }}"
-        -ShareRoot "{{ stig_share_root }}"
-        -RoleName "{{ item }}"
+    # ----------------------------------------------------------------------
+    # Run script for each role on the Windows host
+    # ----------------------------------------------------------------------
+    - name: Run STIG Rollup for each Role
+      ansible.windows.win_powershell:
+        script: |
+          & "{{ remote_script_path }}" `
+            -ShareRoot "{{ stig_share_root }}" `
+            -RoleName "{{ item }}"
       loop: "{{ stig_roles }}"
-      register: rollup_output
-      changed_when: true
+      register: rollup_results
 
-    - name: 📥 Show output (debug)
+    # ----------------------------------------------------------------------
+    # Debug output
+    # ----------------------------------------------------------------------
+    - name: Show script output
       ansible.builtin.debug:
-        msg: "{{ rollup_output.results }}"
+        var: rollup_results
