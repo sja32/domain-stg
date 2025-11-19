@@ -1,37 +1,45 @@
 ---
+# ============================================================================
+#  Generate STIG Rollup Reports
+#  Runs ONLY on the controller inside the Windows EE
+# ============================================================================
+
 - name: Generate STIG Rollup Reports for All Roles
-  hosts: domain_controllers
-  gather_facts: no
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../vars/stig_settings.yml
 
   vars:
-    share_root: "\\\\192.168.10.198\\STIG-Results"
-
-    stig_roles:
-      - domain_controllers
-      - member_servers
-      - workstations
-
-    ps_script_path: "/var/lib/awx/projects/_27__01_domain_stg/scripts/StigRollupReport.ps1"
+    script_path: "/var/lib/awx/projects/{{ tower_project_scm_id }}__{{ tower_project_scm_branch }}/scripts/StigRollupReport.ps1"
 
   tasks:
 
-    - name: Read PowerShell script from controller
-      ansible.builtin.slurp:
-        src: "{{ ps_script_path }}"
-      register: ps_script_raw
+    # ------------------------------------------------------------------------
+    # Validate the PowerShell rollup script exists
+    # ------------------------------------------------------------------------
+    - name: 🔍 Check rollup script exists
+      ansible.builtin.stat:
+        path: "{{ script_path }}"
+      register: ps_script
 
-    - name: Decode PowerShell script for Windows execution
-      ansible.builtin.set_fact:
-        ps_script: "{{ ps_script_raw.content | b64decode }}"
+    - name: ❌ Fail if script missing
+      ansible.builtin.fail:
+        msg: "Rollup script not found at {{ script_path }}. Fix project path."
+      when: not ps_script.stat.exists
 
-    - name: Run STIG Rollup for each role on Windows hosts
-      ansible.windows.win_powershell:
-        script: |
-          {{ ps_script }}
-          StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ item }}" -OutputName "STIG-Rollup.html"
+    # ------------------------------------------------------------------------
+    # Run rollup for each role defined in stig_settings.yml
+    # ------------------------------------------------------------------------
+    - name: 📊 Run STIG rollup for each role
+      ansible.builtin.command: >
+        pwsh -File "{{ script_path }}"
+        -ShareRoot "{{ stig_share_root }}"
+        -RoleName "{{ item }}"
       loop: "{{ stig_roles }}"
-      register: rollup_out
+      register: rollup_output
+      changed_when: true
 
-    - name: Debug rollup output
-      debug:
-        var: rollup_out
+    - name: 📥 Show output (debug)
+      ansible.builtin.debug:
+        msg: "{{ rollup_output.results }}"
