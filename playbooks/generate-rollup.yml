@@ -10,27 +10,18 @@
       - member_servers
       - workstations
 
+    # Script stored in your Git project inside AWX
     ps_script_path: "/var/lib/awx/projects/_27__01_domain_stg/scripts/StigRollupReport.ps1"
 
   tasks:
 
-    - name: Ensure rollup script exists
-      ansible.windows.win_stat:
-        path: "{{ ps_script_path }}"
-      register: script_stat
-
-    - name: Fail if script missing
-      ansible.builtin.fail:
-        msg: "Rollup script not found at {{ ps_script_path }}"
-      when: not script_stat.stat.exists
-
-    - name: Read PowerShell script from project folder
-      ansible.windows.win_slurp:
+    - name: Read PowerShell script from controller filesystem
+      ansible.builtin.slurp:
         src: "{{ ps_script_path }}"
       register: ps_script_raw
 
     - name: Decode script content
-      set_fact:
+      ansible.builtin.set_fact:
         ps_script: "{{ ps_script_raw.content | b64decode }}"
 
     - name: Run STIG Rollup for each role
@@ -39,8 +30,8 @@
           {{ ps_script }}
           StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ item }}" -OutputName "STIG-Rollup.html"
       loop: "{{ roles }}"
-      register: rollup_result
+      register: output
 
-    - name: Show results
+    - name: Show output
       debug:
-        var: rollup_result
+        var: output
