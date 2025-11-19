@@ -1,8 +1,8 @@
 ---
 - name: Generate STIG Rollup Reports for All Roles
-  hosts: domain_controllers     # Pick ANY Windows host in this group
+  hosts: domain_controllers, member_servers, workstations
   gather_facts: no
-  strategy: free
+
   vars:
     share_root: "\\\\192.168.10.198\\STIG-Results"
     roles:
@@ -25,5 +25,5 @@
       ansible.windows.win_powershell:
         script: |
           {{ ps_script }}
-          StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ item }}" -OutputName "STIG-Rollup-{{ item }}.html"
+          StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ item }}"
       loop: "{{ roles }}"
