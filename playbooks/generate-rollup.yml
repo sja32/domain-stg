@@ -11,7 +11,7 @@
   tasks:
     - name: Read PowerShell script from file
       ansible.builtin.slurp:
-        src: "{{ playbook_dir }}/StigRollupReport.ps1"
+        src: "{{ playbook_dir }}../scripts/StigRollupReport.ps1"
       register: ps_script_raw
 
     - name: Decode script content
