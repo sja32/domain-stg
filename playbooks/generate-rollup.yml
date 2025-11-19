@@ -6,33 +6,32 @@
   vars:
     share_root: "\\\\192.168.10.198\\STIG-Results"
 
-    roles:
+    stig_roles:
       - domain_controllers
       - member_servers
       - workstations
 
-    # This path MUST match the AWX synced project
     ps_script_path: "/var/lib/awx/projects/_27__01_domain_stg/scripts/StigRollupReport.ps1"
 
   tasks:
 
-    - name: Read PowerShell script from controller filesystem
+    - name: Read PowerShell script from controller
       ansible.builtin.slurp:
         src: "{{ ps_script_path }}"
       register: ps_script_raw
 
-    - name: Decode script content
+    - name: Decode PowerShell script for Windows execution
       ansible.builtin.set_fact:
         ps_script: "{{ ps_script_raw.content | b64decode }}"
 
-    - name: Run STIG Rollup for each role
+    - name: Run STIG Rollup for each role on Windows hosts
       ansible.windows.win_powershell:
         script: |
           {{ ps_script }}
           StigRollupReport -ShareRoot "{{ share_root }}" -RoleName "{{ item }}" -OutputName "STIG-Rollup.html"
-      loop: "{{ roles }}"
-      register: output
+      loop: "{{ stig_roles }}"
+      register: rollup_out
 
-    - name: Show output
+    - name: Debug rollup output
       debug:
-        var: output
+        var: rollup_out
