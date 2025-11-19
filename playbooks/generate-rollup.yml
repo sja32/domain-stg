@@ -1,16 +1,17 @@
 ---
 - name: Generate STIG Rollup Reports for All Roles
-  hosts: dc_group
+  hosts: domain_controllers
   gather_facts: no
 
   vars:
     share_root: "\\\\192.168.10.198\\STIG-Results"
+
     roles:
       - domain_controllers
       - member_servers
       - workstations
 
-    # Script stored in your Git project inside AWX
+    # This path MUST match the AWX synced project
     ps_script_path: "/var/lib/awx/projects/_27__01_domain_stg/scripts/StigRollupReport.ps1"
 
   tasks:
