@@ -25,8 +25,8 @@
     - name: Run STIG Rollup for each Role
       ansible.windows.win_powershell:
         script: |
-          $User = "{{ username }}"
-          $Pass = "{{ password }}"
+          $User = "{{ ansible_user }}"
+          $Pass = "{{ ansible_password }}"
           $SecurePass = ConvertTo-SecureString $Pass -AsPlainText -Force
           $Cred = New-Object System.Management.Automation.PSCredential($User, $SecurePass)
 
