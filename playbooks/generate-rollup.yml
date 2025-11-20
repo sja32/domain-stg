@@ -4,7 +4,7 @@
   gather_facts: no
 
   vars:
-    share_root_unc: "\\192.168.10.198\STIG-Results"
+    share_root_unc: "\\\\192.168.10.198\\STIG-Results"
     stig_roles:
       - domain_controllers
       - member_servers
