@@ -1,53 +1,49 @@
 ---
-# ============================================================================
-#  Generate STIG Rollup Reports ON THE WINDOWS HOST (not controller)
-# ============================================================================
-
 - name: Generate STIG Rollup Reports
-  hosts: domain_controllers   # <-- OR whichever Windows host you want to run it on
-  gather_facts: false
+  hosts: domain_controllers
+  gather_facts: no
+
   vars_files:
     - ../vars/stig_settings.yml
 
-  vars:
-    remote_script_dir: "C:\\ProgramData\\StigRollup"
-    remote_script_path: "{{ remote_script_dir }}\\StigRollupReport.ps1"
-    local_script_path: "../scripts/StigRollupReport.ps1"
-
   tasks:
 
-    # ----------------------------------------------------------------------
-    # Create folder on Windows host
-    # ----------------------------------------------------------------------
+    # -------------------------------------------------------------
+    # Ensure script folder exists on Windows host
+    # -------------------------------------------------------------
     - name: Create script folder on Windows host
       ansible.windows.win_file:
-        path: "{{ remote_script_dir }}"
+        path: C:\ProgramData\StigRollup
         state: directory
 
-    # ----------------------------------------------------------------------
-    # Copy script from Git repo → Windows host
-    # ----------------------------------------------------------------------
+    # -------------------------------------------------------------
+    # Copy StigRollupReport.ps1 to Windows host
+    # -------------------------------------------------------------
     - name: Copy Rollup PS Script to Windows Host
       ansible.windows.win_copy:
-        src: "{{ local_script_path }}"
-        dest: "{{ remote_script_path }}"
+        src: ../scripts/StigRollupReport.ps1
+        dest: C:\ProgramData\StigRollup\StigRollupReport.ps1
         force: yes
 
-    # ----------------------------------------------------------------------
-    # Run script for each role on the Windows host
-    # ----------------------------------------------------------------------
+    # -------------------------------------------------------------
+    # Run the rollup for each role
+    # -------------------------------------------------------------
     - name: Run STIG Rollup for each Role
       ansible.windows.win_powershell:
         script: |
-          & "{{ remote_script_path }}" `
-            -ShareRoot "{{ stig_share_root }}" `
-            -RoleName "{{ item }}"
-      loop: "{{ stig_roles }}"
-      register: rollup_results
+          $User = "{{ smb_username }}"
+          $Pass = "{{ smb_password }}"
+          $sec = ConvertTo-SecureString $Pass -AsPlainText -Force
+          $Cred = New-Object System.Management.Automation.PSCredential ($User, $sec)
 
-    # ----------------------------------------------------------------------
-    # Debug output
-    # ----------------------------------------------------------------------
-    - name: Show script output
-      ansible.builtin.debug:
-        var: rollup_results
+          $ShareRoot = "{{ stig_share_root }}"    # UNC path from vars file
+          $RoleName  = "{{ item }}"
+
+          # Run the script from ProgramData
+          C:\ProgramData\StigRollup\StigRollupReport.ps1 `
+            -ShareRoot $ShareRoot `
+            -RoleName  $RoleName `
+            -OutputName "STIG-Rollup-$RoleName.html"
+      loop: "{{ stig_roles }}"
+      register: rollup_output
+      no_log: false
