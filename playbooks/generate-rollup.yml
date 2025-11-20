@@ -5,23 +5,23 @@
 
   vars:
     share_root_unc: "\\\\192.168.10.198\\STIG-Results"
-    stig_roles:
+
+    rollup_roles:
       - domain_controllers
       - member_servers
       - workstations
 
-    # SAME method as STIG pipeline
-    smb_user_effective: "{{ smb_user | default(ansible_user) }}"
-    smb_pass_effective: "{{ smb_pass | default(ansible_password) }}"
+    rollup_script_dir: "C:\\ProgramData\\StigRollup"
+    rollup_script_path: "{{ rollup_script_dir }}\\StigRollupReport.ps1"
 
   tasks:
 
     ###########################################################################
-    # 1. Ensure rollup folder exists
+    # 1. Ensure destination folder exists on Windows host
     ###########################################################################
     - name: Ensure rollup directory exists
       ansible.windows.win_file:
-        path: "C:\\ProgramData\\StigRollup"
+        path: "{{ rollup_script_dir }}"
         state: directory
 
     ###########################################################################
@@ -29,33 +29,13 @@
     ###########################################################################
     - name: Copy rollup script to host
       ansible.windows.win_copy:
-        src: "playbooks/scripts/StigRollupReport.ps1"
-        dest: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
+        src: "scripts/StigRollupReport.ps1"
+        dest: "{{ rollup_script_path }}"
 
     ###########################################################################
-    # 3. Run rollup per role — using SAME SMB CONNECTION METHOD AS STIG PIPELINE
+    # 3. Run STIG Rollup for each role
     ###########################################################################
     - name: Run STIG Rollup for each role
-      no_log: true
       ansible.windows.win_powershell:
         script: |
-          $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_user_effective }}', $sec)
-
-          # mount share using the trusted STIG pipeline method
-          New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ share_root_unc }}' -Credential $cred -ErrorAction Stop | Out-Null
-
-          try {
-            $role = '{{ item }}'
-            $outputName = "SummaryReport-{{ item }}.html"
-
-            & "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1" `
-                -ShareRoot "R:\\" `
-                -RoleName $role `
-                -OutputName $outputName
-          }
-          finally {
-            Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
-          }
-
-      loop: "{{ stig_roles }}"
+          Set-ExecutionPolicy Bypass -Scope Process -Forc
