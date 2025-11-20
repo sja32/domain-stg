@@ -1,14 +1,11 @@
 ---
 - name: Generate STIG Rollup Reports
   hosts: domain_controllers
-  gather_facts: no
+  gather_facts: false
 
   vars:
-    # UNC path to STIG results root
     share_root_unc: "\\\\192.168.10.198\\STIG-Results"
-
-    # Roles inside the STIG-Results folder
-    stig_roles:
+    roles:
       - domain_controllers
       - member_servers
       - workstations
@@ -16,7 +13,7 @@
   tasks:
 
     # -------------------------------------------------------------
-    # Ensure ProgramData\StigRollup folder exists on Windows host
+    # Create rollup script folder on the Windows host
     # -------------------------------------------------------------
     - name: Create script folder on Windows host
       ansible.windows.win_file:
@@ -24,12 +21,11 @@
         state: directory
 
     # -------------------------------------------------------------
-    # Copy the Rollup Script to Windows Host
-    # (path corrected to match repo structure)
+    # Copy the PowerShell rollup script
     # -------------------------------------------------------------
     - name: Copy Rollup PS Script to Windows Host
       ansible.windows.win_copy:
-        src: "../scripts/StigRollupReport.ps1"
+        src: "playbooks/scripts/StigRollupReport.ps1"
         dest: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
 
     # -------------------------------------------------------------
@@ -41,16 +37,10 @@
           $params = @{
               ShareRoot = "{{ share_root_unc }}"
               RoleName  = "{{ item }}"
+              Username  = "{{ smb_username }}"
+              Password  = "{{ smb_password }}"
               OutputName = "SummaryReport-Rollup.html"
           }
-
-          & "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1" @params
-      loop: "{{ stig_roles }}"
-      register: rollup_output
-
-    # -------------------------------------------------------------
-    # OPTIONAL: Show results in AWX log
-    # -------------------------------------------------------------
-    - name: Debug output from rollup script
-      debug:
-        var: rollup_output
+          & "C:\ProgramData\StigRollup\StigRollupReport.ps1" @params
+      loop: "{{ roles }}"
+      no_log: true
