@@ -1,10 +1,10 @@
 ---
 - name: Generate STIG Rollup Reports
-  hosts: dc1.voughtnet.local     # ✔ Run rollup on this Windows host
+  hosts: dc1.voughtnet.local
   gather_facts: no
 
   vars:
-    share_root: "\\\\192.168.10.198\\STIG-Results"
+    share_root_unc: "\\192.168.10.198\STIG-Results"
     stig_roles:
       - domain_controllers
       - member_servers
@@ -12,26 +12,41 @@
 
   tasks:
 
-    - name: Ensure StigRollup folder exists
+    # -------------------------------------------------------------
+    # Ensure script directory exists
+    # -------------------------------------------------------------
+    - name: Create script folder on Windows host
       ansible.windows.win_file:
         path: "C:\\ProgramData\\StigRollup"
         state: directory
 
-    - name: Copy StigRollupReport.ps1 to Windows Host
+    # -------------------------------------------------------------
+    # Copy the Rollup Script to Windows Host
+    # -------------------------------------------------------------
+    - name: Copy Rollup PS Script to Windows Host
       ansible.windows.win_copy:
-        src: "{{ playbook_dir }}/../scripts/StigRollupReport.ps1"
+        src: "{{ playbook_dir }}/scripts/StigRollupReport.ps1"
         dest: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
 
+    # -------------------------------------------------------------
+    # Run the rollup for each role
+    # -------------------------------------------------------------
     - name: Run STIG Rollup for each Role
       ansible.windows.win_powershell:
         script: |
+          # Convert AWX WinRM credentials into PSCredential
           $User = "{{ ansible_user }}"
           $Pass = "{{ ansible_password }}"
           $SecurePass = ConvertTo-SecureString $Pass -AsPlainText -Force
           $Cred = New-Object System.Management.Automation.PSCredential($User, $SecurePass)
 
-          & "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1" `
-            -ShareRoot "{{ share_root }}" `
+          # Mount the SMB share for this session
+          New-PSDrive -Name "STIG" -PSProvider FileSystem -Root "{{ share_root_unc }}" -Credential $Cred -Scope Script -ErrorAction Stop
+
+          # Run the rollup script for the current role
+          & "C:\ProgramData\StigRollup\StigRollupReport.ps1" `
+            -ShareRoot "STIG:\" `
             -RoleName "{{ item }}" `
             -OutputName "SummaryReport-Rollup.html"
       loop: "{{ stig_roles }}"
+
