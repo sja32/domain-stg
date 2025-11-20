@@ -4,38 +4,48 @@
   gather_facts: no
 
   vars:
-    share_root_unc: "\\\\192.168.10.198\\STIG-Results"
-
-    rollup_roles:
+    roles:
       - domain_controllers
       - member_servers
       - workstations
 
-    rollup_script_dir: "C:\\ProgramData\\StigRollup"
-    rollup_script_path: "{{ rollup_script_dir }}\\StigRollupReport.ps1"
+    share_root_unc: "\\\\192.168.10.198\\STIG-Results"
+    rollup_dir: "C:\\ProgramData\\StigRollup"
+    rollup_script: "{{ rollup_dir }}\\StigRollupReport.ps1"
 
   tasks:
-
     ###########################################################################
-    # 1. Ensure destination folder exists on Windows host
+    # 1. Ensure rollup directory exists
     ###########################################################################
     - name: Ensure rollup directory exists
       ansible.windows.win_file:
-        path: "{{ rollup_script_dir }}"
+        path: "{{ rollup_dir }}"
         state: directory
 
     ###########################################################################
-    # 2. Copy rollup script to host
+    # 2. Copy Rollup Script from repo → Windows host
+    #
+    # IMPORTANT:
+    # generate-rollup.yml is inside /tasks/
+    # scripts/StigRollupReport.ps1 is in /scripts/
+    #
+    # Correct relative path = ../../scripts/StigRollupReport.ps1
     ###########################################################################
     - name: Copy rollup script to host
       ansible.windows.win_copy:
-        src: "scripts/StigRollupReport.ps1"
-        dest: "{{ rollup_script_path }}"
+        src: "../../scripts/StigRollupReport.ps1"
+        dest: "{{ rollup_script }}"
+      register: copy_result
+
+    - name: Debug copy result
+      debug:
+        var: copy_result
 
     ###########################################################################
-    # 3. Run STIG Rollup for each role
+    # 3. Execute rollup for each role
     ###########################################################################
     - name: Run STIG Rollup for each role
       ansible.windows.win_powershell:
         script: |
-          Set-ExecutionPolicy Bypass -Scope Process -Forc
+          & "{{ rollup_script }}" -ShareRoot "{{ share_root_unc }}" -RoleName "{{ item }}" -OutputName "SummaryReport-{{ item }}.html"
+      loop: "{{ roles }}"
