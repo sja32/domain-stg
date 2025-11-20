@@ -1,10 +1,13 @@
 ---
 - name: Generate STIG Rollup Reports
-  hosts: dc1.voughtnet.local
+  hosts: domain_controllers
   gather_facts: no
 
   vars:
+    # UNC path to STIG results root
     share_root_unc: "\\\\192.168.10.198\\STIG-Results"
+
+    # Roles inside the STIG-Results folder
     stig_roles:
       - domain_controllers
       - member_servers
@@ -13,7 +16,7 @@
   tasks:
 
     # -------------------------------------------------------------
-    # Ensure script directory exists
+    # Ensure ProgramData\StigRollup folder exists on Windows host
     # -------------------------------------------------------------
     - name: Create script folder on Windows host
       ansible.windows.win_file:
@@ -22,10 +25,11 @@
 
     # -------------------------------------------------------------
     # Copy the Rollup Script to Windows Host
+    # (path corrected to match repo structure)
     # -------------------------------------------------------------
     - name: Copy Rollup PS Script to Windows Host
       ansible.windows.win_copy:
-        src: "{{ playbook_dir }}/scripts/StigRollupReport.ps1"
+        src: "../scripts/StigRollupReport.ps1"
         dest: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
 
     # -------------------------------------------------------------
@@ -34,19 +38,19 @@
     - name: Run STIG Rollup for each Role
       ansible.windows.win_powershell:
         script: |
-          # Convert AWX WinRM credentials into PSCredential
-          $User = "{{ ansible_user }}"
-          $Pass = "{{ ansible_password }}"
-          $SecurePass = ConvertTo-SecureString $Pass -AsPlainText -Force
-          $Cred = New-Object System.Management.Automation.PSCredential($User, $SecurePass)
+          $params = @{
+              ShareRoot = "{{ share_root_unc }}"
+              RoleName  = "{{ item }}"
+              OutputName = "SummaryReport-Rollup.html"
+          }
 
-          # Mount the SMB share for this session
-          New-PSDrive -Name "STIG" -PSProvider FileSystem -Root "{{ share_root_unc }}" -Credential $Cred -Scope Script -ErrorAction Stop
-
-          # Run the rollup script for the current role
-          & "C:\ProgramData\StigRollup\StigRollupReport.ps1" `
-            -ShareRoot "STIG:\" `
-            -RoleName "{{ item }}" `
-            -OutputName "SummaryReport-Rollup.html"
+          & "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1" @params
       loop: "{{ stig_roles }}"
+      register: rollup_output
 
+    # -------------------------------------------------------------
+    # OPTIONAL: Show results in AWX log
+    # -------------------------------------------------------------
+    - name: Debug output from rollup script
+      debug:
+        var: rollup_output
