@@ -1,6 +1,6 @@
 ---
 - name: Generate STIG Rollup Reports
-  hosts: windows_report_host
+  hosts: all
   gather_facts: no
 
   vars:
