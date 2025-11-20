@@ -1,11 +1,11 @@
 ---
 - name: Generate STIG Rollup Reports
-  hosts: windows_report_host
+  hosts: dc1.voughtnet.local     # ✔ Run rollup on this Windows host
   gather_facts: no
 
   vars:
     share_root: "\\\\192.168.10.198\\STIG-Results"
-    roles:
+    stig_roles:
       - domain_controllers
       - member_servers
       - workstations
@@ -34,7 +34,4 @@
             -ShareRoot "{{ share_root }}" `
             -RoleName "{{ item }}" `
             -OutputName "SummaryReport-Rollup.html"
-
-        credential_username: "{{ username }}"
-        credential_password: "{{ password }}"
-      loop: "{{ roles }}"
+      loop: "{{ stig_roles }}"
