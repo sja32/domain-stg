@@ -1,6 +1,6 @@
 ---
 - name: Generate STIG Rollup Reports
-  hosts: all
+  hosts: dc1.voughtnet.local
   gather_facts: no
 
   vars:
