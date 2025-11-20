@@ -1,53 +1,35 @@
 ---
-# generate-rollup.yml
-# Run this from AWX
-
 - name: Generate STIG Rollup Reports
   hosts: domain_controllers
   gather_facts: no
 
   vars:
     share_root_unc: "\\\\192.168.10.198\\STIG-Results"
-    roles:
+    stig_roles:
       - domain_controllers
       - member_servers
       - workstations
 
   tasks:
 
-    ############################################################
-    # 1. Ensure script directory exists
-    ############################################################
     - name: Ensure rollup directory exists
       ansible.windows.win_file:
         path: "C:\\ProgramData\\StigRollup"
         state: directory
 
-    ############################################################
-    # 2. Copy PS script from AWX → Windows Host
-    ############################################################
     - name: Copy rollup script to host
       ansible.windows.win_copy:
         src: "{{ playbook_dir }}/../scripts/StigRollupReport.ps1"
         dest: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
 
-    ############################################################
-    # 3. Run the rollup for each role
-    ############################################################
-    - name: Run STIG Rollup for each Role
+    - name: Run STIG Rollup for each role
       ansible.windows.win_powershell:
         script: |
-          param(
-            [string]$ShareRoot,
-            [string]$RoleName
-          )
+          $ShareRoot = "{{ share_root_unc }}"
+          $RoleName  = "{{ item }}"
 
           & "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1" `
             -ShareRoot $ShareRoot `
             -RoleName $RoleName `
-            -OutputName "SummaryReport-Rollup.html"
-
-        arguments:
-          ShareRoot: "{{ share_root_unc }}"
-          RoleName: "{{ item }}"
-      loop: "{{ roles }}"
+            -OutputName "SummaryReport-{{ item }}.html"
+      loop: "{{ stig_roles }}"
