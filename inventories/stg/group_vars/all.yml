@@ -4,10 +4,6 @@ ansible_winrm_transport: ntlm
 ansible_winrm_server_cert_validation: ignore
 ansible_port: 5985
 
-# SMB vars
-smb_username: "voughtnet\\svc-ansible"
-smb_password: "YOUR_PASSWORD"
-
 # Evaluate-STIG Version Folder Name
 stig_version: "Evaluate-STIG_1.2507.5"
 
