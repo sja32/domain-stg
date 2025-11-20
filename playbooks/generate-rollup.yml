@@ -1,49 +1,40 @@
 ---
 - name: Generate STIG Rollup Reports
-  hosts: domain_controllers
+  hosts: windows_report_host
   gather_facts: no
 
-  vars_files:
-    - ../vars/stig_settings.yml
+  vars:
+    share_root: "\\\\192.168.10.198\\STIG-Results"
+    roles:
+      - domain_controllers
+      - member_servers
+      - workstations
 
   tasks:
 
-    # -------------------------------------------------------------
-    # Ensure script folder exists on Windows host
-    # -------------------------------------------------------------
-    - name: Create script folder on Windows host
+    - name: Ensure StigRollup folder exists
       ansible.windows.win_file:
-        path: C:\ProgramData\StigRollup
+        path: "C:\\ProgramData\\StigRollup"
         state: directory
 
-    # -------------------------------------------------------------
-    # Copy StigRollupReport.ps1 to Windows host
-    # -------------------------------------------------------------
-    - name: Copy Rollup PS Script to Windows Host
+    - name: Copy StigRollupReport.ps1 to Windows Host
       ansible.windows.win_copy:
-        src: ../scripts/StigRollupReport.ps1
-        dest: C:\ProgramData\StigRollup\StigRollupReport.ps1
-        force: yes
+        src: "{{ playbook_dir }}/../scripts/StigRollupReport.ps1"
+        dest: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
 
-    # -------------------------------------------------------------
-    # Run the rollup for each role
-    # -------------------------------------------------------------
     - name: Run STIG Rollup for each Role
       ansible.windows.win_powershell:
         script: |
-          $User = "{{ smb_username }}"
-          $Pass = "{{ smb_password }}"
-          $sec = ConvertTo-SecureString $Pass -AsPlainText -Force
-          $Cred = New-Object System.Management.Automation.PSCredential ($User, $sec)
+          $User = "{{ username }}"
+          $Pass = "{{ password }}"
+          $SecurePass = ConvertTo-SecureString $Pass -AsPlainText -Force
+          $Cred = New-Object System.Management.Automation.PSCredential($User, $SecurePass)
 
-          $ShareRoot = "{{ stig_share_root }}"    # UNC path from vars file
-          $RoleName  = "{{ item }}"
+          & "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1" `
+            -ShareRoot "{{ share_root }}" `
+            -RoleName "{{ item }}" `
+            -OutputName "SummaryReport-Rollup.html"
 
-          # Run the script from ProgramData
-          C:\ProgramData\StigRollup\StigRollupReport.ps1 `
-            -ShareRoot $ShareRoot `
-            -RoleName  $RoleName `
-            -OutputName "STIG-Rollup-$RoleName.html"
-      loop: "{{ stig_roles }}"
-      register: rollup_output
-      no_log: false
+        credential_username: "{{ username }}"
+        credential_password: "{{ password }}"
+      loop: "{{ roles }}"
