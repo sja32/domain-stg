@@ -51,4 +51,4 @@
             Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
           }
       loop: "{{ roles_list }}"
-      no_log: true
+      no_log: false 
