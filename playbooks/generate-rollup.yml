@@ -4,48 +4,51 @@
   gather_facts: no
 
   vars:
-    roles:
+    share_root_unc: "\\\\192.168.10.198\\STIG-Results"
+    smb_user: "{{ smb_user_effective }}"
+    smb_pass: "{{ smb_pass_effective }}"
+    roles_list:
       - domain_controllers
       - member_servers
       - workstations
 
-    share_root_unc: "\\\\192.168.10.198\\STIG-Results"
-    rollup_dir: "C:\\ProgramData\\StigRollup"
-    rollup_script: "{{ rollup_dir }}\\StigRollupReport.ps1"
-
   tasks:
+
     ###########################################################################
-    # 1. Ensure rollup directory exists
+    # 1. Ensure destination folder exists
     ###########################################################################
     - name: Ensure rollup directory exists
       ansible.windows.win_file:
-        path: "{{ rollup_dir }}"
+        path: "C:\\ProgramData\\StigRollup"
         state: directory
 
     ###########################################################################
-    # 2. Copy Rollup Script from repo → Windows host
-    #
-    # IMPORTANT:
-    # generate-rollup.yml is inside /tasks/
-    # scripts/StigRollupReport.ps1 is in /scripts/
-    #
-    # Correct relative path = ../../scripts/StigRollupReport.ps1
+    # 2. Copy rollup script to host (AWX-safe path)
     ###########################################################################
     - name: Copy rollup script to host
       ansible.windows.win_copy:
-        src: "../../scripts/StigRollupReport.ps1"
-        dest: "{{ rollup_script }}"
-      register: copy_result
-
-    - name: Debug copy result
-      debug:
-        var: copy_result
+        src: "{{ playbook_dir }}/../scripts/StigRollupReport.ps1"
+        dest: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
+        remote_src: false
 
     ###########################################################################
-    # 3. Execute rollup for each role
+    # 3. Run the rollup for each role
     ###########################################################################
     - name: Run STIG Rollup for each role
       ansible.windows.win_powershell:
         script: |
-          & "{{ rollup_script }}" -ShareRoot "{{ share_root_unc }}" -RoleName "{{ item }}" -OutputName "SummaryReport-{{ item }}.html"
-      loop: "{{ roles }}"
+          $sec  = ConvertTo-SecureString '{{ smb_pass }}' -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_user }}', $sec)
+
+          New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ share_root_unc }}' -Credential $cred -ErrorAction Stop | Out-Null
+          try {
+            & "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1" `
+              -ShareRoot '{{ share_root_unc }}' `
+              -RoleName '{{ item }}' `
+              -OutputName "SummaryReport-{{ item }}.html"
+          }
+          finally {
+            Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
+          }
+      loop: "{{ roles_list }}"
+      no_log: true
