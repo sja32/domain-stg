@@ -1,13 +1,10 @@
 ---
 - name: Generate STIG Rollup Reports
-  hosts: dc1.voughtnet.local
+  hosts: "{{ target }}"
   gather_facts: no
-
   vars:
-    share_root_unc: "\\\\192.168.10.198\\STIG-Results"
-    smb_user: "{{ smb_user_effective }}"
-    smb_pass: "{{ smb_pass_effective }}"
-    roles_list:
+    stig_share_root: "\\192.168.10.198\\STIG-Results"
+    roles_to_process:
       - domain_controllers
       - member_servers
       - workstations
@@ -15,40 +12,33 @@
   tasks:
 
     ###########################################################################
-    # 1. Ensure destination folder exists
+    # 1. Ensure directory exists for placing script: C:\ProgramData\StigRollup
     ###########################################################################
     - name: Ensure rollup directory exists
       ansible.windows.win_file:
-        path: "C:\\ProgramData\\StigRollup"
+        path: C:\ProgramData\StigRollup
         state: directory
 
     ###########################################################################
-    # 2. Copy rollup script to host (AWX-safe path)
+    # 2. Copy the CKL-based StigRollupReport.ps1 script to host
     ###########################################################################
     - name: Copy rollup script to host
       ansible.windows.win_copy:
-        src: "{{ playbook_dir }}/../scripts/StigRollupReport.ps1"
-        dest: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
-        remote_src: false
+        src: files/StigRollupReport.ps1        # <--- your CKL script
+        dest: C:\ProgramData\StigRollup\StigRollupReport.ps1
+        force: yes
 
     ###########################################################################
-    # 3. Run the rollup for each role
+    # 3. Run CKL Rollup for each role
     ###########################################################################
     - name: Run STIG Rollup for each role
+      no_log: false
       ansible.windows.win_powershell:
         script: |
-          $sec  = ConvertTo-SecureString '{{ smb_pass }}' -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_user }}', $sec)
-
-          New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ share_root_unc }}' -Credential $cred -ErrorAction Stop | Out-Null
-          try {
-            & "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1" `
-              -ShareRoot '{{ share_root_unc }}' `
-              -RoleName '{{ item }}' `
-              -OutputName "SummaryReport-{{ item }}.html"
-          }
-          finally {
-            Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
-          }
-      loop: "{{ roles_list }}"
-      no_log: false 
+          $role = "{{ item }}"
+          $script = "C:\ProgramData\StigRollup\StigRollupReport.ps1"
+          & $script `
+            -ShareRoot "{{ stig_share_root }}" `
+            -RoleName $role `
+            -OutputName "SummaryReport-$role.html"
+      loop: "{{ roles_to_process }}"
