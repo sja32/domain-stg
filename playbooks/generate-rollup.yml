@@ -1,37 +1,67 @@
 ---
-- name: Generate STIG Rollup Reports
-  hosts: dc1.voughtnet.local
+- name: Generate STIG Rollup Reports (Local execution on appsrv1)
+  hosts: appsrv1.voughtnet.local
   gather_facts: no
+
   vars:
-    stig_share_root: "\\192.168.10.198\\STIG-Results"
-    reporting_output: "\\192.168.10.198\\STIG-Results\\Reports"
+    # The 3 STIG roles you currently use
     roles_to_process:
       - domain_controllers
       - member_servers
       - workstations
 
+    # LOCAL paths on appsrv1 (no UNC/SMB)
+    share_root_local: "F:\\STIG-Results"
+    reporting_output_local: "F:\\STIG-Results\\Reports"
+
+    # Path to the rollup script on appsrv1
+    stig_rollup_script: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
+
   tasks:
 
-    - name: Ensure rollup directory exists on host
-      ansible.windows.win_file:
-        path: C:\ProgramData\StigRollup
-        state: directory
-
-    - name: Copy rollup script to host
-      ansible.windows.win_copy:
-        src: "{{ playbook_dir}}/../scripts/StigRollupReport.ps1"
-        dest: C:\ProgramData\StigRollup\StigRollupReport.ps1
-        force: yes
-
-    - name: Run STIG Rollup for each role
+    ###########################################################################
+    # Ensure Reports directory exists
+    ###########################################################################
+    - name: 🧹 Ensure Reports directory exists (Local Path)
       ansible.windows.win_powershell:
         script: |
-          $role = "{{ item }}"
-          $script = "C:\ProgramData\StigRollup\StigRollupReport.ps1"
+          $path = "{{ reporting_output_local }}"
+          if (-not (Test-Path $path)) {
+            New-Item -Path $path -ItemType Directory -Force | Out-Null
+          }
+      register: ensure_reports_folder
 
-          & $script `
-            -ShareRoot "{{ stig_share_root }}" `
-            -RoleName $role `
-            -OutputName "SummaryReport-$role.html" `
-            -OutputFolder "{{ reporting_output }}"
+
+    ###########################################################################
+    # Run STIG Rollup for each role
+    ###########################################################################
+    - name: 📄 Run STIG Rollup for each role
+      ansible.windows.win_powershell:
+        script: |
+          $params = @{
+            ShareRoot  = "{{ share_root_local }}"
+            RoleName   = "{{ item }}"
+            OutputName = "SummaryReport-{{ item }}.html"
+          }
+
+          # Execute script; errors bubble naturally to AWX
+          & "{{ stig_rollup_script }}" @params
+      loop: "{{ roles_to_process }}"
+      register: rollup_results
+
+
+    ###########################################################################
+    # Copy each generated HTML file into the Reports folder
+    ###########################################################################
+    - name: 📤 Move generated reports into Reports folder
+      ansible.windows.win_powershell:
+        script: |
+          $src = "C:\\ProgramData\\StigRollup\\SummaryReport-{{ item }}.html"
+          $dst = "{{ reporting_output_local }}"
+
+          if (Test-Path $src) {
+            Copy-Item -Path $src -Destination $dst -Force
+          } else {
+            Write-Host "❌ Report file not found for role '{{ item }}'"
+          }
       loop: "{{ roles_to_process }}"
