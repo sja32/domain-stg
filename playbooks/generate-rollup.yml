@@ -19,7 +19,7 @@
 
     - name: Copy rollup script to host
       ansible.windows.win_copy:
-        src: files/StigRollupReport.ps1
+        src: "..scripts/StigRollupReport.ps1"
         dest: C:\ProgramData\StigRollup\StigRollupReport.ps1
         force: yes
 
