@@ -10,5 +10,3 @@ stig_roles:
 # (Reserved for future master dashboard script)
 stig_master_report_path: '\\192.168.10.198\STIG-Results\Reports'
 
-# PowerShell command used on the controller:
-powershell_path: 'powershell'
