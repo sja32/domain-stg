@@ -28,6 +28,18 @@ param(
     [string]$OutputFolder = ""          # If provided, report goes here
 )
 
+# --- SANITIZE UNC PATHS (Fix Double-Slash Issues) ---
+function Fix-Unc {
+    param([string]$p)
+    if ($p -match '^\\[^\\]') {
+        return ('\\' + $p)   # ensure UNC begins with \\ 
+    }
+    return $p
+}
+
+$ShareRoot    = Fix-Unc $ShareRoot
+$OutputFolder = Fix-Unc $OutputFolder
+
 Write-Host "=== STIG Rollup Report (CKL-based) ==="
 Write-Host "Share Root : $ShareRoot"
 Write-Host "Role Name  : $RoleName"
