@@ -4,7 +4,7 @@
   gather_facts: no
   vars:
     stig_share_root: "\\192.168.10.198\\STIG-Results"
-    reporting_output: "\\192.168.10.198\\STIG-Results\\Reporting"
+    reporting_output: "\\192.168.10.198\\STIG-Results\\Reports"
     roles_to_process:
       - domain_controllers
       - member_servers
