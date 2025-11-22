@@ -1,9 +1,10 @@
 ---
 - name: Generate STIG Rollup Reports
-  hosts: "{{ target }}"
+  hosts: dc1.voughtnet.local
   gather_facts: no
   vars:
     stig_share_root: "\\192.168.10.198\\STIG-Results"
+    reporting_output: "\\192.168.10.198\\STIG-Results\\Reporting"
     roles_to_process:
       - domain_controllers
       - member_servers
@@ -11,34 +12,26 @@
 
   tasks:
 
-    ###########################################################################
-    # 1. Ensure directory exists for placing script: C:\ProgramData\StigRollup
-    ###########################################################################
-    - name: Ensure rollup directory exists
+    - name: Ensure rollup directory exists on host
       ansible.windows.win_file:
         path: C:\ProgramData\StigRollup
         state: directory
 
-    ###########################################################################
-    # 2. Copy the CKL-based StigRollupReport.ps1 script to host
-    ###########################################################################
     - name: Copy rollup script to host
       ansible.windows.win_copy:
-        src: files/StigRollupReport.ps1        # <--- your CKL script
+        src: files/StigRollupReport.ps1
         dest: C:\ProgramData\StigRollup\StigRollupReport.ps1
         force: yes
 
-    ###########################################################################
-    # 3. Run CKL Rollup for each role
-    ###########################################################################
     - name: Run STIG Rollup for each role
-      no_log: false
       ansible.windows.win_powershell:
         script: |
           $role = "{{ item }}"
           $script = "C:\ProgramData\StigRollup\StigRollupReport.ps1"
+
           & $script `
             -ShareRoot "{{ stig_share_root }}" `
             -RoleName $role `
-            -OutputName "SummaryReport-$role.html"
+            -OutputName "SummaryReport-$role.html" `
+            -OutputFolder "{{ reporting_output }}"
       loop: "{{ roles_to_process }}"
