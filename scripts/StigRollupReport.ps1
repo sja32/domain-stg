@@ -1,44 +1,18 @@
-<#
-.SYNOPSIS
-    Consolidate multiple CKL files into a single rollup HTML report.
-
-.DESCRIPTION
-    This script parses DISA STIG CKL files under:
-        \\SERVER\STIG-Results\<RoleName>\<Host>\Checklist\*.ckl
-
-    It extracts:
-        - VulnID (V-####)
-        - RuleID
-        - RuleTitle
-        - Status (Open, NotAFinding, Not Reviewed, Not Applicable)
-        - Severity (High/Medium/Low)
-
-    It rolls them up across all hosts and generates ONE report per role.
-#>
-
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ShareRoot,                 # e.g. \\192.168.10.198\STIG-Results
+    [string]$ShareRoot,            # e.g. \\192.168.10.198\STIG-Results
 
     [Parameter(Mandatory = $true)]
-    [string]$RoleName,                  # domain_controllers, member_servers, workstations
+    [string]$RoleName,             # domain_controllers, member_servers, workstations
 
     [string]$OutputName = "SummaryReport-Rollup.html",
 
-    [string]$OutputFolder = ""          # If provided, report goes here
+    [string]$OutputFolder = ""     # e.g. \\192.168.10.198\STIG-Results\Reports
 )
 
-# --- SANITIZE UNC PATHS (Fix Double-Slash Issues) ---
-function Fix-Unc {
-    param([string]$p)
-    if ($p -match '^\\[^\\]') {
-        return ('\\' + $p)   # ensure UNC begins with \\ 
-    }
-    return $p
-}
-
-$ShareRoot    = Fix-Unc $ShareRoot
-$OutputFolder = Fix-Unc $OutputFolder
+# --- AWX-safe: Do NOT modify UNC slashes ---
+$ShareRoot    = $ShareRoot.Trim()
+$OutputFolder = $OutputFolder.Trim()
 
 Write-Host "=== STIG Rollup Report (CKL-based) ==="
 Write-Host "Share Root : $ShareRoot"
@@ -46,21 +20,21 @@ Write-Host "Role Name  : $RoleName"
 Write-Host "Output Name: $OutputName"
 Write-Host "OutputFolder: $OutputFolder"
 
-# Role folder: \\server\STIG-Results\domain_controllers
+# Build: \\server\STIG-Results\<role>
 $rolePath = Join-Path -Path $ShareRoot -ChildPath $RoleName
 
 if (-not (Test-Path -Path $rolePath)) {
     throw "Role path '$rolePath' does not exist. Verify ShareRoot and RoleName."
 }
 
-# Each host has a folder under domain_controllers
+# list DC1, WINDC2, etc.
 $hostDirs = Get-ChildItem -Directory -Path $rolePath | Where-Object { $_.Name -ne "Reports" }
 
 if ($hostDirs.Count -eq 0) {
     throw "No host folders found under '$rolePath'."
 }
 
-# CKL Rollup storage
+# ---------- FINDINGS ROLLOUP ----------
 $findingsIndex = @{}
 
 function Get-OverallStatus {
@@ -78,78 +52,77 @@ function Get-OverallStatus {
 foreach ($hostDir in $hostDirs) {
 
     $hostName = $hostDir.Name
-    $cklPath = Join-Path -Path $hostDir.FullName -ChildPath "Checklist"
+    $cklFolder = Join-Path -Path $hostDir.FullName -ChildPath "Checklist"
 
-    if (-not (Test-Path $cklPath)) {
+    if (-not (Test-Path $cklFolder)) {
         Write-Warning "Checklist folder missing for host '$hostName'"
         continue
     }
 
-    $cklFiles = Get-ChildItem -Path $cklPath -Filter *.ckl
+    # Get all CKL files inside Checklist folder
+    $cklFiles = Get-ChildItem -Path $cklFolder -Filter *.ckl
+
     if ($cklFiles.Count -eq 0) {
-        Write-Warning "No CKL files found for host '$hostName' under '$cklPath'."
+        Write-Warning "No CKLs found for host '$hostName' in $cklFolder"
         continue
     }
 
-    foreach ($cklFile in $cklFiles) {
+    foreach ($ckl in $cklFiles) {
+        Write-Host "Processing CKL: $($ckl.FullName) for host $hostName"
 
-        Write-Host "Processing CKL: $($cklFile.FullName) for host $hostName"
+        [xml]$xml = Get-Content -Path $ckl.FullName
 
-        [xml]$xml = Get-Content $cklFile.FullName
+        # Extract <STIGS><iSTIG><VULN>
+        $vulns = $xml.CHECKLIST.STIGS.iSTIG.VULN
 
-        # Correct DISA namespace path
-        $stigNodes = $xml.CHECKLIST.STIGS.iSTIG
-
-        if (-not $stigNodes) {
-            Write-Warning "No <iSTIG> nodes found in CKL '$($cklFile.FullName)'."
+        if (-not $vulns) {
+            Write-Warning "No <VULN> entries found in CKL '$($ckl.FullName)'"
             continue
         }
 
-        foreach ($stig in $stigNodes) {
-            $stigTitle   = $stig.STIG_INFO.SI_DATA | Where-Object { $_.SID_NAME -eq "title" } | Select-Object -ExpandProperty SID_DATA
-            $stigVersion = $stig.STIG_INFO.SI_DATA | Where-Object { $_.SID_NAME -eq "version" } | Select-Object -ExpandProperty SID_DATA
+        foreach ($v in $vulns) {
 
-            foreach ($vuln in $stig.VULN) {
+            $vulnId = ($v.VULN_ATTRIBUTE | Where-Object { $_.ATTR_NAME -eq "Vuln_Num" }).ATTRIBUTE_DATA
+            $ruleId = ($v.VULN_ATTRIBUTE | Where-Object { $_.ATTR_NAME -eq "Rule_ID" }).ATTRIBUTE_DATA
+            $ruleTitle = ($v.VULN_ATTRIBUTE | Where-Object { $_.ATTR_NAME -eq "Rule_Title" }).ATTRIBUTE_DATA
+            $severity = ($v.VULN_ATTRIBUTE | Where-Object { $_.ATTR_NAME -eq "Severity" }).ATTRIBUTE_DATA
+            $status = $v.STATUS
 
-                $vulnId     = ($vuln.STIG_DATA | Where-Object { $_.VULN_ATTRIBUTE -eq "Vuln_Num" }).ATTRIBUTE_DATA
-                $ruleId     = ($vuln.STIG_DATA | Where-Object { $_.VULN_ATTRIBUTE -eq "Rule_ID" }).ATTRIBUTE_DATA
-                $ruleTitle  = ($vuln.STIG_DATA | Where-Object { $_.VULN_ATTRIBUTE -eq "Rule_Title" }).ATTRIBUTE_DATA
-                $severity   = ($vuln.STIG_DATA | Where-Object { $_.VULN_ATTRIBUTE -eq "Severity" }).ATTRIBUTE_DATA
-                $status     = $vuln.STATUS
-
-                if ([string]::IsNullOrWhiteSpace($vulnId)) {
-                    $vulnId = $ruleId
-                }
-                if ([string]::IsNullOrWhiteSpace($vulnId)) { continue }
-
-                if (-not $findingsIndex.ContainsKey($vulnId)) {
-                    $findingsIndex[$vulnId] = [PSCustomObject]@{
-                        VulnId       = $vulnId
-                        RuleId       = $ruleId
-                        RuleTitle    = $ruleTitle
-                        Severity     = $severity
-                        HostStatuses = @{}
-                        StigTitle    = $stigTitle
-                        StigVersion  = $stigVersion
-                    }
-                }
-
-                $findingsIndex[$vulnId].HostStatuses[$hostName] = $status
+            if ([string]::IsNullOrWhiteSpace($vulnId)) {
+                $vulnId = $ruleId
             }
+
+            if ([string]::IsNullOrWhiteSpace($vulnId)) {
+                continue
+            }
+
+            if (-not $findingsIndex.ContainsKey($vulnId)) {
+                $findingsIndex[$vulnId] = [PSCustomObject]@{
+                    VulnId       = $vulnId
+                    RuleId       = $ruleId
+                    RuleTitle    = $ruleTitle
+                    RiskRating   = $severity
+                    HostStatuses = @{}
+                }
+            }
+
+            $findingsIndex[$vulnId].HostStatuses[$hostName] = $status
         }
     }
 }
 
-# Rollup
+# --------- BUILD FINAL ROLLOUP ARRAY ----------
 $totalHosts = $hostDirs.Count
 $rolledUp = foreach ($rec in $findingsIndex.Values) {
 
     $statuses = $rec.HostStatuses.Values
     $overall = Get-OverallStatus -Statuses $statuses
 
-    $affected = @(
-        foreach ($kvp in $rec.HostStatuses.GetEnumerator()) {
-            if ($kvp.Value -ne "NotAFinding") { $kvp.Key }
+    $affectedHosts = @(
+        foreach ($kv in $rec.HostStatuses.GetEnumerator()) {
+            if ($kv.Value -ne "NotAFinding" -and $kv.Value -ne "Not a Finding") {
+                $kv.Key
+            }
         }
     )
 
@@ -157,20 +130,16 @@ $rolledUp = foreach ($rec in $findingsIndex.Values) {
         VulnId        = $rec.VulnId
         RuleId        = $rec.RuleId
         RuleTitle     = $rec.RuleTitle
-        Severity      = $rec.Severity
+        RiskRating    = $rec.RiskRating
         OverallStatus = $overall
-        AffectedCount = $affected.Count
-        AffectedHosts = $affected -join ", "
-        TotalHosts    = $totalHosts
-        StigTitle     = $rec.StigTitle
-        StigVersion   = $rec.StigVersion
+        AffectedCount = $affectedHosts.Count
+        AffectedHosts = ($affectedHosts -join ", ")
     }
 }
 
-# Build HTML
 $now = Get-Date
-$sample = $rolledUp | Select-Object -First 1
 
+# ---------- HTML REPORT ----------
 $html = @"
 <!DOCTYPE html>
 <html>
@@ -179,25 +148,29 @@ $html = @"
 <title>STIG Rollup Report - $RoleName</title>
 <style>
 body { font-family: Segoe UI, Arial; margin: 20px; }
-.summary-card { border:1px solid #ccc; padding:10px; margin-bottom:15px; border-radius:6px; }
-table { border-collapse: collapse; width:100%; }
-th,td { border:1px solid #ccc; padding:6px; font-size:13px; }
+h1 { color: #333; }
+table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+th, td { border: 1px solid #ccc; padding: 6px 8px; }
+th { background: #f0f0f0; }
+.status-open { background-color: #fdecea; }
+.status-notreviewed { background-color: #fff6e5; }
+.risk-high { color: #c0392b; font-weight: bold; }
+.risk-medium { color: #f39c12; font-weight: bold; }
+.risk-low { color: #27ae60; font-weight: bold; }
 </style>
 </head>
 <body>
 
-<h1>STIG Rollup Report - $RoleName</h1>
-<p><strong>Generated:</strong> $now</p>
-<p><strong>Total Hosts:</strong> $totalHosts</p>
-<p><strong>STIG:</strong> $($sample.StigTitle)</p>
-<p><strong>Version:</strong> $($sample.StigVersion)</p>
+<h1>STIG Rollup - $RoleName</h1>
+<p><strong>Generated:</strong> $($now.ToString("yyyy-MM-dd HH:mm:ss"))</p>
 
 <table>
 <thead>
 <tr>
     <th>Vuln ID</th>
-    <th>Rule Title</th>
-    <th>Severity</th>
+    <th>Rule ID</th>
+    <th>Title</th>
+    <th>Risk</th>
     <th>Status</th>
     <th>Affected Hosts</th>
 </tr>
@@ -205,13 +178,27 @@ th,td { border:1px solid #ccc; padding:6px; font-size:13px; }
 <tbody>
 "@
 
-foreach ($item in $rolledUp | Sort-Object Severity, VulnId) {
+foreach ($item in $rolledUp | Sort-Object RiskRating, VulnId) {
+
+    switch ($item.OverallStatus) {
+        "Open"         { $rowClass = "status-open" }
+        "Not Reviewed" { $rowClass = "status-notreviewed" }
+        default        { $rowClass = "" }
+    }
+
+    switch -Regex ($item.RiskRating) {
+        "high"   { $riskClass = "risk-high" }
+        "medium" { $riskClass = "risk-medium" }
+        "low"    { $riskClass = "risk-low" }
+        default  { $riskClass = "" }
+    }
 
     $html += @"
-<tr>
+<tr class="$rowClass">
     <td>$($item.VulnId)</td>
+    <td>$($item.RuleId)</td>
     <td>$([System.Web.HttpUtility]::HtmlEncode($item.RuleTitle))</td>
-    <td>$($item.Severity)</td>
+    <td class="$riskClass">$($item.RiskRating)</td>
     <td>$($item.OverallStatus)</td>
     <td>$($item.AffectedHosts)</td>
 </tr>
@@ -219,16 +206,18 @@ foreach ($item in $rolledUp | Sort-Object Severity, VulnId) {
 }
 
 $html += @"
-</tbody></table>
-</body></html>
+</tbody>
+</table>
+
+</body>
+</html>
 "@
 
-# Output Path
-if ($OutputFolder -and (Test-Path $OutputFolder)) {
-    $outputPath = Join-Path $OutputFolder $OutputName
-}
-else {
-    $outputPath = Join-Path $rolePath $OutputName
+# -------- OUTPUT LOCATION --------
+if ($OutputFolder -ne "") {
+    $outputPath = Join-Path -Path $OutputFolder -ChildPath $OutputName
+} else {
+    $outputPath = Join-Path -Path $rolePath -ChildPath $OutputName
 }
 
 $html | Set-Content -Path $outputPath -Encoding UTF8
