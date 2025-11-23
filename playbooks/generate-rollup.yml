@@ -37,6 +37,15 @@
     - debug:
         var: drives.stdout_lines    
 
+    #########################################################################
+    # Debug
+    #########################################################################
+ 
+    - name: Verify path exists via UNC
+      ansible.windows.win_powershell: 
+        script: |
+          Test-Path "\\appsvr1\F$\stig-results\domain_controllers"
+        
     ###########################################################################
     # Ensure Reports directory exists
     ###########################################################################
