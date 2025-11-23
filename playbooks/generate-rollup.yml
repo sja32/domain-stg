@@ -11,8 +11,8 @@
       - workstations
 
     # LOCAL paths on appsrv1 (no UNC/SMB)
-    share_root_local: "\\\\appsvr1\\F$\\stig-results"
-    reporting_output_local: "\\\\appsvr1\\F:\\stig-results\\Reports"
+    share_root_local: "\\\\appsvr1\\stig-results"
+    reporting_output_local: "\\\\appsvr1\\stig-results\\Reports"
 
     # Path to the rollup script on appsrv1
     stig_rollup_script: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
@@ -44,7 +44,7 @@
     - name: Verify path exists via UNC
       ansible.windows.win_powershell: 
         script: |
-          Test-Path "\\appsvr1\F$\stig-results\domain_controllers"
+          Test-Path "\\appsvr1\stig-results\domain_controllers"
 
     #########################################################################
     # List PS Drives
