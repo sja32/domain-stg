@@ -45,6 +45,18 @@
       ansible.windows.win_powershell: 
         script: |
           Test-Path "\\appsvr1\F$\stig-results\domain_controllers"
+
+    #########################################################################
+    # List PS Drives
+    #########################################################################
+ 
+    - name: List PS drives
+      ansible.windows.win_powershell: 
+        script: |
+          Get-PSDrive |
+            Select-Object Name, Provider, Root |
+            ConvertTo-Json -Compress
+      register: drives
         
     ###########################################################################
     # Ensure Reports directory exists
