@@ -11,8 +11,8 @@
       - workstations
 
     # LOCAL paths on appsrv1 (no UNC/SMB)
-    share_root_local: "F:\\STIG-Results"
-    reporting_output_local: "F:\\STIG-Results\\Reports"
+    share_root_local: "F:\\stig-results"
+    reporting_output_local: "F:\\stig-results\\Reports"
 
     # Path to the rollup script on appsrv1
     stig_rollup_script: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
