@@ -25,7 +25,7 @@
  
     - name: Debug Share Root Variable
       debug:
-        msg: "ShareRoot is: {{ smb_share_root }}"
+        msg: "ShareRoot is: {{ share_root }}"
 
     ###########################################################################
     # Ensure Reports directory exists
