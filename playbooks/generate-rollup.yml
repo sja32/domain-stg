@@ -1,6 +1,6 @@
 ---
 - name: Generate STIG Rollup Reports (Local execution on appsrv1)
-  hosts: appsrv1.voughtnet.local
+  hosts: appsvr1.voughtnet.local
   gather_facts: no
 
   vars:
