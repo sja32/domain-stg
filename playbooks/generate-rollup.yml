@@ -27,6 +27,16 @@
       debug:
         msg: "ShareRoot is: {{ share_root }}"
 
+    #########################################################################
+    # Debug
+    #########################################################################
+ 
+    - name: Debug paths from WinRM
+      ansible.windows.win_command: |
+        PowerShell -NoProfile -Command "Get-PSDrive"
+    - debug:
+        var: drives.stdout_lines    
+
     ###########################################################################
     # Ensure Reports directory exists
     ###########################################################################
