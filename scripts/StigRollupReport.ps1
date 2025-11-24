@@ -8,35 +8,27 @@
         <ShareRoot>\<RoleName>\<Host>\Checklist\*.ckl
   - Groups findings by STIG (title + version/release info).
   - De-duplicates findings so each Vuln ID / Rule ID appears once per STIG,
-    with merged host statuses (per finding) in Affected Hosts.
-  - Shows per-STIG summary like:
-        High: X   Medium: Y   Low: Z   Not Reviewed: W
-    where High/Medium/Low = *Open only* and Not Reviewed is separate.
-  - Builds sections per STIG as Bootstrap 5 accordion items (collapsed by default).
-  - Client-side filter bar:
-        - Checkboxes: High / Medium / Low
-        - Checkbox: Show Not Reviewed
-    => you can show any combination of severities and optionally hide Not_Reviewed.
-  - Computes CORA-style risk at *role* level:
-        - Not_Reviewed is treated as Open for CORA only.
-        - Uses CAT I/II/III (High/Medium/Low) with weighted average.
-
-  Per-STIG CSV export:
-    For each STIG, a CSV is written to:
-        <ShareRoot>\Reports\<RoleName>\csv\<RoleName>_<SafeStigName>.csv
-    Includes:
-        VulnId, RuleId, Severity, Title, StatusGroup, AffectedHosts
+    with merged hosts in the "Affected Hosts" column.
+  - Only displays findings where STATUS is Open or Not_Reviewed.
+    (Not_Reviewed is treated as "open" for CORA metrics.)
+  - Shows a CORA-style risk summary at the role level.
+  - Each STIG section is collapsible (<details>/<summary>), collapsed by default.
+  - Includes a client-side filter bar to toggle:
+        High / Medium / Low / Not Reviewed
+    (any combination).
 
 .PARAMETER ShareRoot
   Root share containing role folders (e.g. \\appsvr1\stig-results)
 
 .PARAMETER RoleName
-  Role folder under the share (e.g. domain_controllers, member_servers, workstations)
+  Role folder under the share (e.g. domain_controllers, member_servers)
 
 .PARAMETER OutputName
   Base file name for the generated HTML (e.g. STIG-Rollup.html).
-  The script will automatically timestamp the final file:
-      STIG-Rollup_<RoleName>_yyyyMMdd-HHmm.html
+  The script will automatically produce:
+      STIG-Rollup_<role>_yyyyMMdd-HHmm.html
+  and save it under:
+      <ShareRoot>\Reports\<RoleName>\
 #>
 
 [CmdletBinding()]
@@ -50,6 +42,9 @@ param (
     [Parameter(Mandatory = $true)]
     [string]$OutputName
 )
+
+# Ensure System.Web (for HtmlEncode) is available
+[void][Reflection.Assembly]::LoadWithPartialName("System.Web")
 
 # ---------------- Helper functions ----------------
 
@@ -104,9 +99,7 @@ function Get-StigDisplayInfo {
     $benchDate   = $null
 
     if ($releaseInfo) {
-        # Handle patterns like:
-        #   "Release: 2 Benchmark Date: 02 Jul 2025"
-        #   "Windows Server 2022 ... :: Version 2, Release 5 :: 14 Nov 2024"
+        # Handle "Version 2, Release 5 :: 09 Nov 2023" and similar
         if ($releaseInfo -match "Release\s*[: ]\s*(\d+)") {
             $releaseNum = $matches[1]
         }
@@ -125,7 +118,7 @@ function Get-StigDisplayInfo {
     $displayTitle = $titleRaw -replace "Security Technical Implementation Guide","STIG"
     $displayTitle = $displayTitle.Trim()
 
-    # Build a nice "Version X, Release Y, Date" line OR fall back to raw
+    # Build a nice "Version X, Release Y, Date" string
     $metaParts = @()
     if ($version)    { $metaParts += ("Version {0}" -f $version) }
     if ($releaseNum) { $metaParts += ("Release {0}" -f $releaseNum) }
@@ -152,86 +145,16 @@ function Get-StigDisplayInfo {
     }
 }
 
-function Get-Percent {
-    param (
-        [int]$Open,
-        [int]$Total
-    )
-    if ($Total -le 0) { return 0.0 }
-    return [math]::Round(100.0 * $Open / $Total, 1)
-}
-
-function Get-SafeFileName {
-    param(
-        [string]$Name
-    )
-    if (-not $Name) { return "Unknown" }
-    $invalid = [IO.Path]::GetInvalidFileNameChars() -join ''
-    $pattern = "[{0}]" -f [Regex]::Escape($invalid)
-    $safe = $Name -replace $pattern, "_"
-    # Also trim and collapse spaces
-    $safe = $safe.Trim()
-    $safe = $safe -replace "\s+","_"
-    if (-not $safe) { $safe = "Unknown" }
-    return $safe
-}
-
-# ---------------- Discover scope & output paths ----------------
+# ---------------- Discover scope ----------------
 
 $rolePath = Join-Path $ShareRoot $RoleName
 if (-not (Test-Path $rolePath)) {
     throw "Role path not found: $rolePath"
 }
 
-# Reports\<RoleName>\ and CSV subfolder
-$reportsRoot    = Join-Path $ShareRoot "Reports"
-if (-not (Test-Path $reportsRoot)) {
-    New-Item -Path $reportsRoot -ItemType Directory -Force | Out-Null
-}
-
-$roleReportPath = Join-Path $reportsRoot $RoleName
-if (-not (Test-Path $roleReportPath)) {
-    New-Item -Path $roleReportPath -ItemType Directory -Force | Out-Null
-}
-
-$csvFolder = Join-Path $roleReportPath "csv"
-if (-not (Test-Path $csvFolder)) {
-    New-Item -Path $csvFolder -ItemType Directory -Force | Out-Null
-}
-
-# Build timestamped HTML name under Reports\<RoleName>
-$baseName = [System.IO.Path]::GetFileNameWithoutExtension($OutputName)
-if (-not $baseName) { $baseName = "STIG-Rollup" }
-
-$ext = [System.IO.Path]::GetExtension($OutputName)
-if (-not $ext) { $ext = ".html" }
-
-$safeRole = ($RoleName -replace "[^A-Za-z0-9_\-]", "_")
-$tsFile   = Get-Date -Format "yyyyMMdd-HHmm"
-$outFileName = "{0}_{1}_{2}{3}" -f $baseName, $safeRole, $tsFile, $ext
-$outPath = Join-Path $roleReportPath $outFileName
-
-# Discover host folders
 $hostFolders = Get-ChildItem -Path $rolePath -Directory | Sort-Object Name
 if (-not $hostFolders) {
-    # Still generate a minimal HTML so AWX doesn't fail
-    $timeStamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $htmlNoHosts = @"
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>STIG Rollup Report - $RoleName</title>
-</head>
-<body>
-  <h1>STIG Rollup Report - $RoleName</h1>
-  <p>Generated: $timeStamp</p>
-  <p>No host folders were found under <code>$rolePath</code>.</p>
-</body>
-</html>
-"@
-    $htmlNoHosts | Out-File -FilePath $outPath -Encoding UTF8
-    Write-Host "⚠ No host folders found. Empty report generated at: $outPath"
-    return
+    throw "No host folders found under $rolePath"
 }
 
 $totalHosts = $hostFolders.Count
@@ -242,7 +165,7 @@ Write-Host "Found $totalHosts host(s) under '$RoleName'."
 # Per-STIG data: keyed by "TitleRaw|ReleaseText"
 $byStig = @{}
 
-# CORA counters (role level) — Not_Reviewed counted as Open for CORA only
+# CORA counters (role level)
 $cat1Total = 0  # High
 $cat2Total = 0  # Medium
 $cat3Total = 0  # Low
@@ -430,29 +353,10 @@ foreach ($hostFolder in $hostFolders) {
     } # end foreach CKL
 } # end foreach hostFolder
 
-# ---------------- If no findings, generate minimal report ----------------
+# ---------------- Bail out if nothing ----------------
 
 if (-not $anyFindings) {
-    $timeStamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-
-    $minimalHtml = @"
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>STIG Rollup Report - $RoleName</title>
-</head>
-<body>
-  <h1>STIG Rollup Report - $RoleName</h1>
-  <p><b>Generated:</b> $timeStamp</p>
-  <p>No Open or Not Reviewed findings detected under <code>$rolePath</code>.</p>
-</body>
-</html>
-"@
-
-    $minimalHtml | Out-File -FilePath $outPath -Encoding UTF8
-    Write-Host "✅ No Open/Not Reviewed findings. Minimal report created:"
-    Write-Host "   $outPath"
-    return
+    throw "No Open or Not Reviewed findings detected under $rolePath."
 }
 
 # ---------------- Compute per-STIG counts ----------------
@@ -491,17 +395,26 @@ foreach ($k in $byStig.Keys) {
 
 # ---------------- CORA Risk Rating (role level) ----------------
 
+function Get-Percent {
+    param (
+        [int]$Open,
+        [int]$Total
+    )
+    if ($Total -le 0) { return 0.0 }
+    return [math]::Round(100.0 * $Open / $Total, 1)
+}
+
 $p1 = Get-Percent -Open $cat1Open -Total $cat1Total
 $p2 = Get-Percent -Open $cat2Open -Total $cat2Total
 $p3 = Get-Percent -Open $cat3Open -Total $cat3Total
 
 $weightedAvg = 0.0
 if (($cat1Total + $cat2Total + $cat3Total) -gt 0) {
-    # Using 10 / 4 / 1 weights as before
+    # Original weighting: CAT I = 10, CAT II = 4, CAT III = 1 (total 15)
     $weightedAvg = [math]::Round((( $p1 * 10.0 ) + ( $p2 * 4.0 ) + ( $p3 * 1.0 )) / 15.0, 1)
 }
 
-# Risk Rating thresholds (as previously discussed)
+# Risk Rating thresholds (unchanged from your earlier logic)
 # Very High: >= 20%
 # High:      >= 10% and < 20%
 # Moderate:  > 0% and < 10%
@@ -523,375 +436,372 @@ elseif ($weightedAvg -gt 0.0) {
         $riskRating = "Moderate Risk"
     }
 }
-else {
-    $riskRating = "Very Low Risk"
-}
 
-# ---------------- Generate HTML (Bootstrap + filters + accordions) ----------------
-
-Add-Type -AssemblyName System.Web
+# ---------------- Generate HTML ----------------
 
 $timeStamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 $style = @"
 <style>
 body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  margin: 20px;
   background: #f3f4f6;
-  margin: 0;
-  padding: 16px;
-}
-.page {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-.card-main {
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 4px 16px rgba(15,23,42,0.12);
-  padding: 20px 22px 26px 22px;
+  color: #111827;
 }
 h1 {
-  font-size: 24px;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
-.meta {
-  font-size: 12px;
-  color: #6b7280;
-  margin-bottom: 12px;
-}
-.badge-role {
-  background-color: #eff6ff;
-  color: #1d4ed8;
-}
-.badge-generated {
-  background-color: #ecfdf3;
-  color: #16a34a;
-}
-.badge-weighted {
-  background-color: #fef3c7;
-  color: #92400e;
-}
-.cora-summary {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 12px 14px;
-  background: #ffffff;
-  margin-bottom: 16px;
-}
-.cora-summary table {
-  font-size: 12px;
-}
-.cora-summary th, .cora-summary td {
-  padding: 4px 6px;
-}
-.filter-panel {
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
-  padding: 10px 12px;
-  margin-bottom: 14px;
+p, div {
   font-size: 13px;
 }
-.filter-panel label {
-  margin-right: 12px;
+.main-card {
+  max-width: 1200px;
+  margin: 0 auto;
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(15,23,42,0.12);
+  padding: 20px 24px 28px 24px;
 }
-.accordion-button .stig-badges span {
-  margin-left: 6px;
+.badge-row {
+  margin-top: 4px;
+  margin-bottom: 14px;
 }
-.table-findings {
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+.badge-role { background:#eff6ff; color:#1d4ed8; }
+.badge-generated { background:#ecfdf3; color:#16a34a; }
+.badge-risk { background:#fef3c7; color:#92400e; }
+
+.filter-bar {
+  margin: 10px 0 18px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background:#f9fafb;
+  border:1px solid #e5e7eb;
   font-size: 12px;
 }
-.table-findings th, .table-findings td {
-  padding: 4px 6px;
+.filter-bar label {
+  margin-right: 12px;
+  cursor:pointer;
 }
-.sev-high {
-  color: #b91c1c;
-  font-weight: 600;
+.filter-bar input[type=checkbox] {
+  vertical-align: middle;
 }
-.sev-medium {
-  color: #92400e;
-  font-weight: 600;
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 18px;
 }
-.sev-low {
-  color: #065f46;
-  font-weight: 600;
+th, td {
+  border: 1px solid #e5e7eb;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 12px;
 }
-.status-open {
-  color: #b91c1c;
-  font-weight: 600;
+th {
+  background: #f9fafb;
 }
-.status-nr {
-  color: #92400e;
-  font-weight: 600;
+tr:nth-child(even) td {
+  background-color: #f9fafb;
+}
+.sev-high   { color: #b91c1c; font-weight: 600; }
+.sev-medium { color: #c05621; font-weight: 600; }
+.sev-low    { color: #065f46; font-weight: 600; }
+
+.cora-summary {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  padding: 10px 12px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+.cora-summary h2 {
+  margin: 0 0 6px 0;
+  font-size: 15px;
+}
+.cora-summary table {
+  width: auto;
+  margin-top: 8px;
+}
+.cora-summary th, .cora-summary td {
+  font-size: 12px;
+  padding: 3px 6px;
+}
+
+.stig-block {
+  border:1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  background:#ffffff;
+}
+.stig-block > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  background:#f9fafb;
+  border-radius:8px 8px 0 0;
+}
+.stig-block[open] > summary {
+  border-bottom:1px solid #e5e7eb;
+  background:#eff6ff;
+}
+.stig-title {
+  font-weight:600;
+  font-size: 13px;
+}
+.stig-counts {
+  font-size: 12px;
+  color:#374151;
+}
+.stig-counts span {
+  margin-left:10px;
+}
+.stig-body {
+  padding: 8px 10px 12px 10px;
+}
+.stig-meta {
+  font-size: 12px;
+  margin-bottom: 6px;
+  color:#4b5563;
+}
+.group-heading {
+  margin-top: 10px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight:600;
+}
+.host-pill {
+  display:inline-block;
+  padding:2px 8px;
+  margin:1px 4px 1px 0;
+  border-radius:999px;
+  background:#eef2ff;
+  color:#3730a3;
+  font-size:11px;
 }
 .tiny {
   font-size: 11px;
   color: #6b7280;
+  margin-top: -8px;
+  margin-bottom: 12px;
 }
 </style>
 "@
 
-$scriptBlock = @'
+$scriptBlock = @"
 <script>
-function applyStigFilters() {
-  var showHigh = document.getElementById("filterHigh").checked;
-  var showMed  = document.getElementById("filterMed").checked;
-  var showLow  = document.getElementById("filterLow").checked;
-  var showNR   = document.getElementById("filterNR").checked;
+function applySeverityFilters() {
+  var showHigh = document.getElementById('filterHigh').checked;
+  var showMed  = document.getElementById('filterMed').checked;
+  var showLow  = document.getElementById('filterLow').checked;
+  var showNR   = document.getElementById('filterNR').checked;
 
-  var rows = document.querySelectorAll("tr.finding-row");
+  var rows = document.querySelectorAll('tr.data-row');
   rows.forEach(function(row) {
-    var sev    = row.getAttribute("data-severity"); // High/Medium/Low/Other
-    var status = row.getAttribute("data-status");   // Open/Not_Reviewed
+    var sev = row.getAttribute('data-sev');      // High/Medium/Low/Other
+    var st  = row.getAttribute('data-status');   // Open / Not_Reviewed
 
-    var visible = false;
+    var visible = true;
 
-    if (sev === "High" && showHigh)   { visible = true; }
-    if (sev === "Medium" && showMed)  { visible = true; }
-    if (sev === "Low" && showLow)     { visible = true; }
+    if (sev === 'High' && !showHigh)   visible = false;
+    if (sev === 'Medium' && !showMed)  visible = false;
+    if (sev === 'Low' && !showLow)     visible = false;
 
-    // If severity is not one of High/Med/Low (e.g. "Other"), always show if any severity checkbox is on
-    if (sev !== "High" && sev !== "Medium" && sev !== "Low") {
-      if (showHigh || showMed || showLow) {
-        visible = true;
-      }
-    }
-
-    // Hide Not_Reviewed if toggle is off
-    if (!showNR && status === "Not_Reviewed") {
+    if (st === 'Not_Reviewed' && !showNR) {
       visible = false;
     }
 
-    row.style.display = visible ? "" : "none";
+    row.style.display = visible ? '' : 'none';
   });
 }
 
-function resetStigFilters() {
-  document.getElementById("filterHigh").checked = true;
-  document.getElementById("filterMed").checked  = true;
-  document.getElementById("filterLow").checked  = true;
-  document.getElementById("filterNR").checked   = true;
-  applyStigFilters();
-}
+document.addEventListener('DOMContentLoaded', function() {
+  // Initial filter application (all boxes checked by default)
+  applySeverityFilters();
 
-document.addEventListener("DOMContentLoaded", function() {
-  var ids = ["filterHigh","filterMed","filterLow","filterNR"];
-  ids.forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) {
-      el.addEventListener("change", applyStigFilters);
-    }
+  var boxes = document.querySelectorAll('.filter-bar input[type=checkbox]');
+  boxes.forEach(function(cb) {
+    cb.addEventListener('change', applySeverityFilters);
   });
-  applyStigFilters();
 });
 </script>
-'@
+"@
 
 $html = @()
-$html += "<!DOCTYPE html>"
-$html += "<html lang='en'>"
-$html += "<head>"
-$html += "  <meta charset='utf-8' />"
-$html += "  <title>STIG Rollup Report - $RoleName</title>"
-$html += "  <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet' />"
-$html += $style
-$html += "</head>"
-$html += "<body>"
-$html += "<div class='page'>"
-$html += "  <div class='card-main'>"
-$html += "    <h1>STIG Rollup Report &mdash; Role: $RoleName</h1>"
-$html += "    <div class='meta'>"
-$html += "      <span class='badge badge-role me-2'>Role: $RoleName</span>"
-$html += "      <span class='badge badge-generated me-2'>Generated: $timeStamp</span>"
-$html += "      <span class='badge badge-weighted me-2'>Weighted CORA Score: $weightedAvg`%</span>"
-$html += "      <div>Total Hosts: $totalHosts</div>"
-$html += "      <div>Risk Rating: <strong>$riskRating</strong></div>"
-$html += "    </div>"
+$html += "<html><head><title>STIG Rollup Report - $RoleName</title>$style</head><body>"
+$html += "<div class='main-card'>"
+$html += "<h1>STIG Rollup Report - $RoleName</h1>"
+$html += "<div class='badge-row'>"
+$html += "<span class='badge badge-role'>Role: $RoleName</span>"
+$html += "<span class='badge badge-generated'>Generated: $timeStamp</span>"
+$html += "<span class='badge badge-risk'>Risk: $riskRating</span>"
+$html += "</div>"
+$html += "<p class='tiny'>Not_Reviewed findings are treated as Open for CORA calculations.</p>"
 
-# CORA summary
-$html += "    <div class='cora-summary'>"
-$html += "      <h5 class='mb-2'>CORA Risk Summary (Role: $RoleName)</h5>"
-$html += ("      <p class='mb-1'><b>Risk Rating:</b> {0}<br/><b>Weighted Average:</b> {1}% (Not Reviewed counted as Open)</p>" -f $riskRating, $weightedAvg)
-$html += "      <table class='table table-sm table-bordered mb-0'>"
-$html += "        <thead><tr><th>Category</th><th>Severity</th><th>Open + Not Reviewed</th><th>Total Applicable</th><th>% Open/NR</th></tr></thead>"
-$html += "        <tbody>"
-$html += ("        <tr><td>CAT I</td><td>High</td><td>{0}</td><td>{1}</td><td>{2}%</td></tr>" -f $cat1Open, $cat1Total, $p1)
-$html += ("        <tr><td>CAT II</td><td>Medium</td><td>{0}</td><td>{1}</td><td>{2}%</td></tr>" -f $cat2Open, $cat2Total, $p2)
-$html += ("        <tr><td>CAT III</td><td>Low</td><td>{0}</td><td>{1}</td><td>{2}%</td></tr>" -f $cat3Open, $cat3Total, $p3)
-$html += "        </tbody>"
-$html += "      </table>"
-$html += "    </div>"
+# CORA summary (role level)
+$html += "<div class='cora-summary'>"
+$html += "<h2>CORA Risk Summary (Role Level)</h2>"
+$html += ("<p><b>Risk Rating:</b> {0}<br/>" -f $riskRating)
+$html += ("<b>Weighted Average:</b> {0}% (Not_Reviewed counted as Open)</p>" -f $weightedAvg)
 
-# Filter panel
-$html += "    <div class='filter-panel'>"
-$html += "      <div class='fw-semibold mb-1'>Filters</div>"
-$html += "      <div class='d-flex flex-wrap align-items-center'>"
-$html += "        <div class='form-check form-check-inline'>"
-$html += "          <input class='form-check-input' type='checkbox' id='filterHigh' checked>"
-$html += "          <label class='form-check-label' for='filterHigh'>High</label>"
-$html += "        </div>"
-$html += "        <div class='form-check form-check-inline'>"
-$html += "          <input class='form-check-input' type='checkbox' id='filterMed' checked>"
-$html += "          <label class='form-check-label' for='filterMed'>Medium</label>"
-$html += "        </div>"
-$html += "        <div class='form-check form-check-inline'>"
-$html += "          <input class='form-check-input' type='checkbox' id='filterLow' checked>"
-$html += "          <label class='form-check-label' for='filterLow'>Low</label>"
-$html += "        </div>"
-$html += "        <div class='form-check form-check-inline ms-3'>"
-$html += "          <input class='form-check-input' type='checkbox' id='filterNR' checked>"
-$html += "          <label class='form-check-label' for='filterNR'>Show Not Reviewed</label>"
-$html += "        </div>"
-$html += "        <button type='button' class='btn btn-sm btn-outline-secondary ms-3' onclick='resetStigFilters()'>Reset</button>"
-$html += "      </div>"
-$html += "      <div class='tiny mt-1'>Severity filters apply to all STIG sections below. Not Reviewed can be hidden without affecting CORA math.</div>"
-$html += "    </div>"
+$html += "<table>"
+$html += "<tr><th>Category</th><th>Severity</th><th>Open + Not Reviewed</th><th>Total Applicable</th><th>% Open/NR</th></tr>"
+$html += ("<tr><td>CAT I</td><td>High</td><td>{0}</td><td>{1}</td><td>{2}%</td></tr>" -f $cat1Open, $cat1Total, $p1)
+$html += ("<tr><td>CAT II</td><td>Medium</td><td>{0}</td><td>{1}</td><td>{2}%</td></tr>" -f $cat2Open, $cat2Total, $p2)
+$html += ("<tr><td>CAT III</td><td>Low</td><td>{0}</td><td>{1}</td><td>{2}%</td></tr>" -f $cat3Open, $cat3Total, $p3)
+$html += "</table>"
+$html += "</div>"
 
-# Accordion for STIGs
-$html += "    <div class='accordion' id='stigAccordion'>"
+# Global filter bar
+$html += "<div class='filter-bar'>"
+$html += "<b>Filter Findings:&nbsp;</b>"
+$html += "<label><input type='checkbox' id='filterHigh' checked> High</label>"
+$html += "<label><input type='checkbox' id='filterMed' checked> Medium</label>"
+$html += "<label><input type='checkbox' id='filterLow' checked> Low</label>"
+$html += "<label><input type='checkbox' id='filterNR' checked> Not Reviewed</label>"
+$html += "</div>"
 
-$stigIndex = 0
-
+# Per-STIG sections
 foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
 
+    # Skip STIGs that ended up with no Open/NR findings
     if (-not $s.Findings.Values -or $s.Findings.Count -eq 0) { continue }
 
-    $stigIndex++
-    $accordionId = "stig$stigIndex"
-    $headingId   = "heading$stigIndex"
-    $collapseId  = "collapse$stigIndex"
+    $encTitle   = [System.Web.HttpUtility]::HtmlEncode($s.DisplayTitle)
+    $encRelease = if ($s.ReleaseText) { [System.Web.HttpUtility]::HtmlEncode($s.ReleaseText) } else { "" }
 
-    $displayTitle = [System.Web.HttpUtility]::HtmlEncode($s.DisplayTitle)
-    $releaseText  = if ($s.ReleaseText) { [System.Web.HttpUtility]::HtmlEncode($s.ReleaseText) } else { "" }
+    $html += "<details class='stig-block'>"
+    $html += "<summary>"
+    $html += "<span class='stig-title'>$encTitle</span>"
+    $html += "<span class='stig-counts'>"
+    $html += "<span>High (Open): $($s.HighOpen)</span>"
+    $html += "<span>Medium (Open): $($s.MediumOpen)</span>"
+    $html += "<span>Low (Open): $($s.LowOpen)</span>"
+    $html += "<span>Not Reviewed: $($s.NotReviewedCt)</span>"
+    $html += "</span>"
+    $html += "</summary>"
+    $html += "<div class='stig-body'>"
 
-    $highCount = $s.HighOpen
-    $medCount  = $s.MediumOpen
-    $lowCount  = $s.LowOpen
-    $nrCount   = $s.NotReviewedCt
+    if ($s.ReleaseText) {
+        $html += ("<div class='stig-meta'>Release Info: {0}</div>" -f $encRelease)
+    }
 
-    # Build CSV rows for this STIG
-    $csvRows = @()
+    # Group findings
+    $highRows = @()
+    $medRows  = @()
+    $lowRows  = @()
+    $nrRows   = @()
+
     foreach ($f in $s.Findings.Values) {
-        $hostsList = ($f.Hosts.Keys | Sort-Object) -join ", "
-        $csvRows += [pscustomobject]@{
-            VulnId        = $f.VulnId
-            RuleId        = $f.RuleId
-            Severity      = $f.Severity
-            Title         = $f.Title
-            StatusGroup   = $f.StatusGroup
-            AffectedHosts = $hostsList
+        if ($f.StatusGroup -eq "Open") {
+            switch ($f.Severity) {
+                "High"   { $highRows += $f }
+                "Medium" { $medRows  += $f }
+                "Low"    { $lowRows  += $f }
+                default  { }
+            }
+        }
+        elseif ($f.StatusGroup -eq "Not_Reviewed") {
+            $nrRows += $f
         }
     }
 
-    $safeStigName = Get-SafeFileName $s.DisplayTitle
-    $csvFileName  = "{0}_{1}.csv" -f $safeRole, $safeStigName
-    $csvPathFull  = Join-Path $csvFolder $csvFileName
+    function Add-GroupTable {
+        param (
+            [string]$Label,
+            [array]$RowsRef
+        )
+        if (-not $RowsRef -or $RowsRef.Count -eq 0) { return }
 
-    if ($csvRows.Count -gt 0) {
-        $csvRows | Export-Csv -Path $csvPathFull -NoTypeInformation -Encoding UTF8
-    }
+        $script:html += ("<div class='group-heading'>{0}</div>" -f $Label)
+        $script:html += "<table><tr><th>Vuln ID</th><th>Rule ID</th><th>Title</th><th>Severity</th><th>Affected Hosts</th></tr>"
 
-    # For displaying path in HTML
-    $csvPathDisplay = Join-Path (Join-Path (Join-Path $ShareRoot "Reports") $RoleName) (Join-Path "csv" $csvFileName)
-    $csvPathDisplayHtml = [System.Web.HttpUtility]::HtmlEncode($csvPathDisplay)
+        foreach ($row in ($RowsRef | Sort-Object VulnId, RuleId)) {
+            $sevClass = ""
+            switch ($row.Severity) {
+                "High"   { $sevClass = "sev-high" }
+                "Medium" { $sevClass = "sev-medium" }
+                "Low"    { $sevClass = "sev-low" }
+            }
 
-    # Accordion header
-    $html += "      <div class='accordion-item'>"
-    $html += "        <h2 class='accordion-header' id='$headingId'>"
-    $html += "          <button class='accordion-button collapsed' type='button' data-bs-toggle='collapse' data-bs-target='#$collapseId' aria-expanded='false' aria-controls='$collapseId'>"
-    $html += "            <div>"
-    $html += "              <div class='fw-semibold'>$displayTitle</div>"
-    if ($releaseText) {
-        $html += "              <div class='small text-muted'>$releaseText</div>"
-    }
-    $html += "            </div>"
-    $html += "            <div class='stig-badges ms-auto d-flex align-items-center'>"
-    $html += "              <span class='badge text-bg-danger'>High: $highCount</span>"
-    $html += "              <span class='badge text-bg-warning ms-1'>Medium: $medCount</span>"
-    $html += "              <span class='badge text-bg-success ms-1'>Low: $lowCount</span>"
-    $html += "              <span class='badge text-bg-secondary ms-1'>Not Reviewed: $nrCount</span>"
-    $html += "            </div>"
-    $html += "          </button>"
-    $html += "        </h2>"
+            # Host list – names only, de-duplicated
+            $hostNames  = $row.Hosts.Keys | Sort-Object
+            $hostPills  = @()
+            foreach ($hn in $hostNames) {
+                $hostPills += ("<span class='host-pill'>{0}</span>" -f `
+                    [System.Web.HttpUtility]::HtmlEncode($hn))
+            }
+            $hostsHtml = ($hostPills -join "")
 
-    # Accordion body
-    $html += "        <div id='$collapseId' class='accordion-collapse collapse' aria-labelledby='$headingId' data-bs-parent='#stigAccordion'>"
-    $html += "          <div class='accordion-body'>"
+            $statusAttr = $row.StatusGroup  # Open / Not_Reviewed
 
-    $html += "            <div class='d-flex justify-content-between align-items-center mb-1'>"
-    $html += "              <div class='tiny'>Findings are de-duplicated by Vuln ID / Rule ID across hosts. Affected Hosts shows all impacted systems.</div>"
-    if ($csvRows.Count -gt 0) {
-        $html += "              <button type='button' class='btn btn-sm btn-outline-primary' disabled>CSV exported to: $csvFileName</button>"
-    }
-    $html += "            </div>"
+            $script:html += ("<tr class='data-row' data-sev='{0}' data-status='{1}'>" -f `
+                             [System.Web.HttpUtility]::HtmlEncode($row.Severity),
+                             [System.Web.HttpUtility]::HtmlEncode($statusAttr))
 
-    if ($csvRows.Count -gt 0) {
-        $html += "            <div class='tiny mb-2'>CSV Path: <code>$csvPathDisplayHtml</code></div>"
-    }
-
-    # Single table with all severities; filtered client-side
-    $html += "            <table class='table table-sm table-striped table-bordered table-findings'>"
-    $html += "              <thead>"
-    $html += "                <tr><th>Vuln ID</th><th>Rule ID</th><th>Title</th><th>Severity</th><th>Status</th><th>Affected Hosts</th></tr>"
-    $html += "              </thead>"
-    $html += "              <tbody>"
-
-    foreach ($row in ($s.Findings.Values | Sort-Object Severity, VulnId, RuleId)) {
-        $sev = $row.Severity
-        $sg  = $row.StatusGroup
-        $hostsList = ($row.Hosts.Keys | Sort-Object) -join ", "
-
-        $sevClass = ""
-        switch ($sev) {
-            "High"   { $sevClass = "sev-high" }
-            "Medium" { $sevClass = "sev-medium" }
-            "Low"    { $sevClass = "sev-low" }
+            $script:html += ("<td>{0}</td><td>{1}</td><td>{2}</td><td class='{3}'>{4}</td><td>{5}</td></tr>" -f `
+                             [System.Web.HttpUtility]::HtmlEncode($row.VulnId),
+                             [System.Web.HttpUtility]::HtmlEncode($row.RuleId),
+                             [System.Web.HttpUtility]::HtmlEncode($row.Title),
+                             $sevClass,
+                             [System.Web.HttpUtility]::HtmlEncode($row.Severity),
+                             $hostsHtml)
         }
 
-        $statusClass = if ($sg -eq "Open") { "status-open" } else { "status-nr" }
-
-        $sevHtml    = [System.Web.HttpUtility]::HtmlEncode($sev)
-        $statusHtml = [System.Web.HttpUtility]::HtmlEncode(($sg -replace "_"," "))
-        $vulnHtml   = [System.Web.HttpUtility]::HtmlEncode($row.VulnId)
-        $ruleHtml   = [System.Web.HttpUtility]::HtmlEncode($row.RuleId)
-        $titleHtml  = [System.Web.HttpUtility]::HtmlEncode($row.Title)
-        $hostsHtml  = [System.Web.HttpUtility]::HtmlEncode($hostsList)
-
-        $dataSeverity = $sevHtml
-        $dataStatus   = ($sg -eq "Not_Reviewed") ? "Not_Reviewed" : "Open"
-
-        $html += "                <tr class='finding-row $sevClass $statusClass' data-severity='$dataSeverity' data-status='$dataStatus'>"
-        $html += "                  <td>$vulnHtml</td>"
-        $html += "                  <td>$ruleHtml</td>"
-        $html += "                  <td>$titleHtml</td>"
-        $html += "                  <td class='$sevClass'>$sevHtml</td>"
-        $html += "                  <td class='$statusClass'>$statusHtml</td>"
-        $html += "                  <td>$hostsHtml</td>"
-        $html += "                </tr>"
+        $script:html += "</table>"
     }
 
-    $html += "              </tbody>"
-    $html += "            </table>"
+    Add-GroupTable -Label "High Severity (Open)"   -RowsRef $highRows
+    Add-GroupTable -Label "Medium Severity (Open)" -RowsRef $medRows
+    Add-GroupTable -Label "Low Severity (Open)"    -RowsRef $lowRows
+    Add-GroupTable -Label "Not Reviewed"           -RowsRef $nrRows
 
-    $html += "          </div>"  # accordion-body
-    $html += "        </div>"    # collapse
-    $html += "      </div>"      # accordion-item
+    $html += "</div>"  # .stig-body
+    $html += "</details>"
 }
 
-$html += "    </div>"  # accordion
-$html += "  </div>"    # card-main
-$html += "</div>"      # page
-
-$html += "<script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>"
+$html += "</div>" # .main-card
 $html += $scriptBlock
-$html += "</body>"
-$html += "</html>"
+$html += "</body></html>"
 
-# ---------------- Write output ----------------
+# ---------------- Write output file ----------------
+
+# Timestamped output name: STIG-Rollup_<role>_yyyyMMdd-HHmm.html
+$baseName = [System.IO.Path]::GetFileNameWithoutExtension($OutputName)
+if (-not $baseName) { $baseName = "STIG-Rollup" }
+
+$ext = [System.IO.Path]::GetExtension($OutputName)
+if (-not $ext) { $ext = ".html" }
+
+$safeRole = ($RoleName -replace "[^A-Za-z0-9_\-]", "_")
+$tsFile   = Get-Date -Format "yyyyMMdd-HHmm"
+
+$outFileName = "{0}_{1}_{2}{3}" -f $baseName, $safeRole, $tsFile, $ext
+
+# NEW: write to <ShareRoot>\Reports\<RoleName>\
+$reportsRoot   = Join-Path $ShareRoot "Reports"
+$roleReportDir = Join-Path $reportsRoot $RoleName
+
+if (-not (Test-Path $roleReportDir)) {
+    New-Item -Path $roleReportDir -ItemType Directory -Force | Out-Null
+}
+
+$outPath = Join-Path $roleReportDir $outFileName
 
 ($html -join "`r`n") | Out-File -FilePath $outPath -Encoding UTF8
 
-Write-Host "✅ STIG rollup report created:"
+Write-Host "✅ STIG rollup report created:" -ForegroundColor Green
 Write-Host "   $outPath"
-Write-Host "   Per-STIG CSVs written to: $csvFolder"
