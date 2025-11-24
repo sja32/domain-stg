@@ -565,10 +565,29 @@ tr:nth-child(even) td {
 .stig-counts {
   font-size: 12px;
   color:#374151;
+  font-weight:600;
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  align-items:center;
 }
-.stig-counts span {
-  margin-left:10px;
+.stig-count-pill {
+  display:inline-flex;
+  align-items:center;
+  margin-left:12px;
 }
+.sev-dot {
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  display:inline-block;
+  margin-right:4px;
+}
+.sev-dot-high { background:#ef4444; }     /* red */
+.sev-dot-medium { background:#fbbf24; }   /* yellow/gold */
+.sev-dot-low { background:#9ca3af; }      /* gray */
+.sev-dot-nr { background:#111827; }       /* almost black */
+
 .stig-body {
   padding: 8px 10px 12px 10px;
 }
@@ -687,11 +706,32 @@ foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
     $html += "<summary>"
     $html += "<span class='stig-title'>$encTitle</span>"
     $html += "<span class='stig-counts'>"
-    $html += "<span>High (Open): $($s.HighOpen)</span>"
-    $html += "<span>Medium (Open): $($s.MediumOpen)</span>"
-    $html += "<span>Low (Open): $($s.LowOpen)</span>"
-    $html += "<span>Not Reviewed: $($s.NotReviewedCt)</span>"
+
+    # High
+    $html += "<span class='stig-count-pill'>"
+    $html += "<span class='sev-dot sev-dot-high'></span>"
+    $html += "<span><strong>High:</strong> $($s.HighOpen)</span>"
     $html += "</span>"
+
+    # Medium
+    $html += "<span class='stig-count-pill'>"
+    $html += "<span class='sev-dot sev-dot-medium'></span>"
+    $html += "<span><strong>Medium:</strong> $($s.MediumOpen)</span>"
+    $html += "</span>"
+
+    # Low
+    $html += "<span class='stig-count-pill'>"
+    $html += "<span class='sev-dot sev-dot-low'></span>"
+    $html += "<span><strong>Low:</strong> $($s.LowOpen)</span>"
+    $html += "</span>"
+
+    # Not Reviewed
+    $html += "<span class='stig-count-pill'>"
+    $html += "<span class='sev-dot sev-dot-nr'></span>"
+    $html += "<span><strong>Not Reviewed:</strong> $($s.NotReviewedCt)</span>"
+    $html += "</span>"
+
+    $html += "</span>"   # .stig-counts
     $html += "</summary>"
     $html += "<div class='stig-body'>"
 
@@ -791,7 +831,7 @@ $tsFile   = Get-Date -Format "yyyyMMdd-HHmm"
 
 $outFileName = "{0}_{1}_{2}{3}" -f $baseName, $safeRole, $tsFile, $ext
 
-# NEW: write to <ShareRoot>\Reports\<RoleName>\
+# Write to <ShareRoot>\Reports\<RoleName>\
 $reportsRoot   = Join-Path $ShareRoot "Reports"
 $roleReportDir = Join-Path $reportsRoot $RoleName
 
