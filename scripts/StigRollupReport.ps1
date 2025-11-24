@@ -1,10 +1,13 @@
 <#
 .SYNOPSIS
-    STIG Rollup / CORA-style HTML report from Evaluate-STIG CSV and CKL exports.
+    STIG Rollup / CORA-style HTML report from Evaluate-STIG CSV exports.
 
 .DESCRIPTION
-    - Walks:  <ShareRoot>\<RoleName>\<Host>\Checklist\*.csv / *.ckl
+    - Walks:  <ShareRoot>\<RoleName>\<Host>\Checklist\*.csv
     - Aggregates Open / Not Reviewed findings by Severity.
+    - DEDUPES findings per role:
+        STIG + VulnId + RuleId + Severity + Status
+      and aggregates Host list as pills.
     - Produces a CORA-style summary and detailed tables grouped by STIG.
 
     Designed to work whether ShareRoot is a drive (F:\stig-results)
@@ -55,7 +58,7 @@ if (-not (Test-Path $outputFolder)) {
     New-Item -Path $outputFolder -ItemType Directory -Force | Out-Null
 }
 
-Write-Host "=== STIG Rollup Report (CSV + CKL) ==="
+Write-Host "=== STIG Rollup Report (CSV-based, deduped) ==="
 Write-Host "Share Root : $ShareRoot"
 Write-Host "Role Name  : $RoleName"
 Write-Host "Output Name: $OutputName"
@@ -116,8 +119,8 @@ function Normalize-Status {
     }
 }
 
-# ----------------- Collect Data (CSV + CKL) -----------------
-$rows = @()
+# ----------------- Collect Raw Data (CSV only) -----------------
+$rawFindings = @()
 
 $hostDirs = Get-ChildItem -Path $rolePath -Directory -ErrorAction SilentlyContinue
 if (-not $hostDirs) {
@@ -134,14 +137,12 @@ foreach ($hostDir in $hostDirs) {
     }
 
     $csvFiles = Get-ChildItem -Path $checklistPath -Filter *.csv -ErrorAction SilentlyContinue
-    $cklFiles = Get-ChildItem -Path $checklistPath -Filter *.ckl -ErrorAction SilentlyContinue
 
-    if (-not $csvFiles -and -not $cklFiles) {
-        Write-Host "  ⚠ Skipping $hostName - no CSV or CKL files in Checklist."
+    if (-not $csvFiles) {
+        Write-Host "  ⚠ Skipping $hostName - no CSV files in Checklist."
         continue
     }
 
-    # -------- CSV processing --------
     foreach ($csv in $csvFiles) {
         Write-Host "  📥 Processing CSV: $($csv.FullName)"
 
@@ -158,7 +159,7 @@ foreach ($hostDir in $hostDirs) {
             $ruleId  = Get-ColValue -Row $row -NameHints @('Rule ID','RuleID')
             $status  = Get-ColValue -Row $row -NameHints @('Status','Check Status','Finding Status')
             $sev     = Get-ColValue -Row $row -NameHints @('Severity','Severity Level')
-            $stig    = Get-ColValue -Row $row -NameHints @('STIG','Benchmark','STIG Name')
+            $stig    = Get-ColValue -Row $row -NameHints @('STIG','Benchmark','STIG Name','STIG Title')
             $asset   = Get-ColValue -Row $row -NameHints @('Host Name','Asset Name','Computer Name','System Name')
 
             if (-not $asset) { $asset = $hostName }
@@ -167,7 +168,7 @@ foreach ($hostDir in $hostDirs) {
 
             # Only care about things that are Open / Not Reviewed for reporting
             if ($statusNorm -in @('Open','Not Reviewed')) {
-                $rows += [PSCustomObject]@{
+                $rawFindings += [PSCustomObject]@{
                     Host     = $asset
                     STIG     = if ($stig) { $stig } else { '(Unknown STIG)' }
                     VulnId   = if ($vulnId) { $vulnId } else { '' }
@@ -178,83 +179,46 @@ foreach ($hostDir in $hostDirs) {
             }
         }
     }
+}
 
-    # -------- CKL processing --------
-    foreach ($ckl in $cklFiles) {
-        Write-Host "  📥 Processing CKL: $($ckl.FullName)"
+if (-not $rawFindings) {
+    Write-Host "✅ No Open or Not Reviewed findings found for role '$RoleName'."
+}
 
-        try {
-            [xml]$cklXml = Get-Content -Path $ckl.FullName -ErrorAction Stop
+# ----------------- DEDUPE Findings (per role) -----------------
+# Key: STIG + VulnId + RuleId + Severity + Status
+$dedup = @{}
+
+foreach ($f in $rawFindings) {
+    $key = "{0}|{1}|{2}|{3}|{4}" -f $f.STIG, $f.VulnId, $f.RuleId, $f.Severity, $f.Status
+
+    if (-not $dedup.ContainsKey($key)) {
+        $dedup[$key] = [ordered]@{
+            STIG     = $f.STIG
+            VulnId   = $f.VulnId
+            RuleId   = $f.RuleId
+            Severity = $f.Severity
+            Status   = $f.Status
+            Hosts    = @($f.Host)
         }
-        catch {
-            Write-Host "    ❌ Failed to read CKL: $($_.Exception.Message)"
-            continue
-        }
-
-        # Host name from CKL (fallback to folder name)
-        $assetName = $hostName
-        try {
-            if ($cklXml.CHECKLIST.ASSET.HOST_NAME) {
-                $assetName = [string]$cklXml.CHECKLIST.ASSET.HOST_NAME
-            }
-        } catch { }
-
-        # iSTIG collection
-        $iStigs = $cklXml.CHECKLIST.STIGS.iSTIG
-        if (-not $iStigs) {
-            Write-Host "    ⚠ No iSTIG elements found in CKL."
-            continue
-        }
-
-        foreach ($iStig in $iStigs) {
-            # STIG title
-            $titleNode = $null
-            try {
-                $titleNode = $iStig.STIG_INFO.SI_DATA |
-                    Where-Object { $_.SID_NAME -eq 'title' } |
-                    Select-Object -First 1
-            } catch { }
-
-            $stigName = if ($titleNode) { [string]$titleNode.SID_DATA } else { '(Unknown STIG)' }
-
-            # Each VULN inside this iSTIG
-            foreach ($v in $iStig.VULNS.VULN) {
-                # Build a small hashtable of STIG_DATA
-                $sdMap = @{}
-                foreach ($sdItem in $v.STIG_DATA) {
-                    if ($sdItem.VULN_ATTRIBUTE) {
-                        $sdMap[$sdItem.VULN_ATTRIBUTE] = $sdItem.ATTRIBUTE_DATA
-                    }
-                }
-
-                $vulnId  = $sdMap['Vuln_Num']
-                $ruleId  = $sdMap['Rule_ID']
-                $severity= $sdMap['Severity']
-                $status  = [string]$v.STATUS
-
-                $severityNorm = Normalize-Severity -Severity $severity
-                $statusNorm   = Normalize-Status   -Status   $status
-
-                if ($statusNorm -in @('Open','Not Reviewed')) {
-                    $rows += [PSCustomObject]@{
-                        Host     = $assetName
-                        STIG     = if ($stigName) { $stigName } else { '(Unknown STIG)' }
-                        VulnId   = if ($vulnId) { $vulnId } else { '' }
-                        RuleId   = if ($ruleId) { $ruleId } else { '' }
-                        Severity = $severityNorm
-                        Status   = $statusNorm
-                    }
-                }
-            }
+    }
+    else {
+        if (-not ($dedup[$key].Hosts -contains $f.Host)) {
+            $dedup[$key].Hosts += $f.Host
         }
     }
 }
 
-if (-not $rows) {
-    Write-Host "✅ No Open or Not Reviewed findings found for role '$RoleName'."
+# Final deduped rows for reporting
+$rows = @()
+if ($dedup.Count -gt 0) {
+    $rows = $dedup.Values
 }
 
-# ----------------- Build CORA-style summary -----------------
+# Unique host count (based on raw findings)
+$totalHosts = ($rawFindings | Select-Object -ExpandProperty Host -Unique).Count
+
+# ----------------- Build CORA-style summary (based on deduped findings) -----------------
 $severityOrder = @('High','Medium','Low')
 $summary = @()
 
@@ -318,7 +282,6 @@ function Get-RiskRating {
 }
 
 $riskRating = Get-RiskRating -Score $weightedAverage
-$totalHosts = ($rows | Select-Object -ExpandProperty Host -Unique).Count
 
 # ----------------- Build HTML -----------------
 $timeStamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -411,6 +374,16 @@ $css = @"
         font-size: 11px;
         color: #6b7280;
     }
+    .host-pill {
+        display: inline-block;
+        padding: 2px 8px;
+        margin: 2px 4px 2px 0;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: #111827;
+        font-size: 11px;
+        border: 1px solid #d1d5db;
+    }
 </style>
 "@
 
@@ -430,15 +403,15 @@ $html += "<div class='meta'>"
 $html += "  <span class='pill pill-role'>Role: $RoleName</span>"
 $html += "  <span class='pill pill-generated'>Generated: $timeStamp</span>"
 $html += "  <span class='pill pill-weighted'>Weighted CORA Score: $weightedAverage`%</span>"
-$html += "  <div>Total Hosts: $totalHosts</div>"
+$html += "  <div>Total Unique Hosts with Open/NR Findings: $totalHosts</div>"
 $html += "  <div>Risk Rating: <strong>$riskRating</strong></div>"
 $html += "</div>"
 
 # CORA Summary table
-$html += "<h2>CORA Risk Summary</h2>"
+$html += "<h2>CORA Risk Summary (Deduped Findings)</h2>"
 $html += "<table>"
 $html += "  <thead>"
-$html += "    <tr><th>Category</th><th>Severity</th><th>Open</th><th>Not Reviewed</th><th>Total</th><th>% NR Open</th></tr>"
+$html += "    <tr><th>Category</th><th>Severity</th><th>Open</th><th>Not Reviewed</th><th>Total Unique Findings</th><th>% NR Open</th></tr>"
 $html += "  </thead>"
 $html += "  <tbody>"
 
@@ -467,10 +440,10 @@ foreach ($row in $summary) {
 
 $html += "  </tbody>"
 $html += "</table>"
-$html += "<div class='tiny'>Weighted Average is based on Open + Not Reviewed findings only.</div>"
+$html += "<div class='tiny'>Counts are based on deduplicated findings per role (STIG + Vuln + Rule + Severity + Status). Hosts are aggregated per finding.</div>"
 
 # Detailed findings by STIG
-$groupedByStig = $rows | Sort-Object STIG, Severity, Host, VulnId | Group-Object STIG
+$groupedByStig = $rows | Sort-Object STIG, Severity, VulnId, RuleId | Group-Object STIG
 
 foreach ($stigGroup in $groupedByStig) {
     $stigName = $stigGroup.Name
@@ -478,7 +451,7 @@ foreach ($stigGroup in $groupedByStig) {
 
     $html += "<table>"
     $html += "  <thead>"
-    $html += "    <tr><th>Vuln ID</th><th>Rule ID</th><th>Severity</th><th>Status</th><th>Host</th></tr>"
+    $html += "    <tr><th>Vuln ID</th><th>Rule ID</th><th>Severity</th><th>Status</th><th>Affected Hosts</th></tr>"
     $html += "  </thead>"
     $html += "  <tbody>"
 
@@ -496,12 +469,16 @@ foreach ($stigGroup in $groupedByStig) {
             default         { '' }
         }
 
+        $hostHtml = ($item.Hosts | Sort-Object | ForEach-Object {
+            "<span class='host-pill'>$_</span>"
+        }) -join " "
+
         $html += "    <tr>"
         $html += "      <td>$($item.VulnId)</td>"
         $html += "      <td>$($item.RuleId)</td>"
         $html += "      <td class='$sevClass'>$($item.Severity)</td>"
         $html += "      <td class='$statusClass'>$($item.Status)</td>"
-        $html += "      <td>$($item.Host)</td>"
+        $html += "      <td>$hostHtml</td>"
         $html += "    </tr>"
     }
 
@@ -511,7 +488,7 @@ foreach ($stigGroup in $groupedByStig) {
 
 if (-not $rows) {
     $html += "<h2>No Open or Not Reviewed findings</h2>"
-    $html += "<p>All findings for this role appear to be closed or not applicable based on the CSV/CKL data.</p>"
+    $html += "<p>All findings for this role appear to be closed or not applicable based on the CSV data.</p>"
 }
 
 $html += "</div>"   # .page
