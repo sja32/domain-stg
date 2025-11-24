@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    STIG Rollup / CORA-style HTML report from Evaluate-STIG CSV exports.
+    STIG Rollup / CORA-style HTML report from Evaluate-STIG CSV and CKL exports.
 
 .DESCRIPTION
-    - Walks:  <ShareRoot>\<RoleName>\<Host>\Checklist\*.csv
+    - Walks:  <ShareRoot>\<RoleName>\<Host>\Checklist\*.csv / *.ckl
     - Aggregates Open / Not Reviewed findings by Severity.
     - Produces a CORA-style summary and detailed tables grouped by STIG.
 
@@ -55,7 +55,7 @@ if (-not (Test-Path $outputFolder)) {
     New-Item -Path $outputFolder -ItemType Directory -Force | Out-Null
 }
 
-Write-Host "=== STIG Rollup Report (CSV-based) ==="
+Write-Host "=== STIG Rollup Report (CSV + CKL) ==="
 Write-Host "Share Root : $ShareRoot"
 Write-Host "Role Name  : $RoleName"
 Write-Host "Output Name: $OutputName"
@@ -116,7 +116,7 @@ function Normalize-Status {
     }
 }
 
-# ----------------- Collect Data -----------------
+# ----------------- Collect Data (CSV + CKL) -----------------
 $rows = @()
 
 $hostDirs = Get-ChildItem -Path $rolePath -Directory -ErrorAction SilentlyContinue
@@ -134,11 +134,14 @@ foreach ($hostDir in $hostDirs) {
     }
 
     $csvFiles = Get-ChildItem -Path $checklistPath -Filter *.csv -ErrorAction SilentlyContinue
-    if (-not $csvFiles) {
-        Write-Host "  ⚠ Skipping $hostName - no CSV files in Checklist."
+    $cklFiles = Get-ChildItem -Path $checklistPath -Filter *.ckl -ErrorAction SilentlyContinue
+
+    if (-not $csvFiles -and -not $cklFiles) {
+        Write-Host "  ⚠ Skipping $hostName - no CSV or CKL files in Checklist."
         continue
     }
 
+    # -------- CSV processing --------
     foreach ($csv in $csvFiles) {
         Write-Host "  📥 Processing CSV: $($csv.FullName)"
 
@@ -175,6 +178,76 @@ foreach ($hostDir in $hostDirs) {
             }
         }
     }
+
+    # -------- CKL processing --------
+    foreach ($ckl in $cklFiles) {
+        Write-Host "  📥 Processing CKL: $($ckl.FullName)"
+
+        try {
+            [xml]$cklXml = Get-Content -Path $ckl.FullName -ErrorAction Stop
+        }
+        catch {
+            Write-Host "    ❌ Failed to read CKL: $($_.Exception.Message)"
+            continue
+        }
+
+        # Host name from CKL (fallback to folder name)
+        $assetName = $hostName
+        try {
+            if ($cklXml.CHECKLIST.ASSET.HOST_NAME) {
+                $assetName = [string]$cklXml.CHECKLIST.ASSET.HOST_NAME
+            }
+        } catch { }
+
+        # iSTIG collection
+        $iStigs = $cklXml.CHECKLIST.STIGS.iSTIG
+        if (-not $iStigs) {
+            Write-Host "    ⚠ No iSTIG elements found in CKL."
+            continue
+        }
+
+        foreach ($iStig in $iStigs) {
+            # STIG title
+            $titleNode = $null
+            try {
+                $titleNode = $iStig.STIG_INFO.SI_DATA |
+                    Where-Object { $_.SID_NAME -eq 'title' } |
+                    Select-Object -First 1
+            } catch { }
+
+            $stigName = if ($titleNode) { [string]$titleNode.SID_DATA } else { '(Unknown STIG)' }
+
+            # Each VULN inside this iSTIG
+            foreach ($v in $iStig.VULNS.VULN) {
+                # Build a small hashtable of STIG_DATA
+                $sdMap = @{}
+                foreach ($sdItem in $v.STIG_DATA) {
+                    if ($sdItem.VULN_ATTRIBUTE) {
+                        $sdMap[$sdItem.VULN_ATTRIBUTE] = $sdItem.ATTRIBUTE_DATA
+                    }
+                }
+
+                $vulnId  = $sdMap['Vuln_Num']
+                $ruleId  = $sdMap['Rule_ID']
+                $severity= $sdMap['Severity']
+                $status  = [string]$v.STATUS
+
+                $severityNorm = Normalize-Severity -Severity $severity
+                $statusNorm   = Normalize-Status   -Status   $status
+
+                if ($statusNorm -in @('Open','Not Reviewed')) {
+                    $rows += [PSCustomObject]@{
+                        Host     = $assetName
+                        STIG     = if ($stigName) { $stigName } else { '(Unknown STIG)' }
+                        VulnId   = if ($vulnId) { $vulnId } else { '' }
+                        RuleId   = if ($ruleId) { $ruleId } else { '' }
+                        Severity = $severityNorm
+                        Status   = $statusNorm
+                    }
+                }
+            }
+        }
+    }
 }
 
 if (-not $rows) {
@@ -190,11 +263,11 @@ foreach ($sev in $severityOrder) {
 
     if (-not $rowsBySev) {
         $summary += [PSCustomObject]@{
-            Severity   = $sev
-            Open       = 0
-            NotReviewed= 0
-            Total      = 0
-            PctNR      = 0
+            Severity    = $sev
+            Open        = 0
+            NotReviewed = 0
+            Total       = 0
+            PctNR       = 0
         }
         continue
     }
@@ -205,11 +278,11 @@ foreach ($sev in $severityOrder) {
     $pctNR       = if ($total -gt 0) { [math]::Round(($notReviewed * 100.0) / $total, 1) } else { 0 }
 
     $summary += [PSCustomObject]@{
-        Severity   = $sev
-        Open       = $open
-        NotReviewed= $notReviewed
-        Total      = $total
-        PctNR      = $pctNR
+        Severity    = $sev
+        Open        = $open
+        NotReviewed = $notReviewed
+        Total       = $total
+        PctNR       = $pctNR
     }
 }
 
@@ -438,7 +511,7 @@ foreach ($stigGroup in $groupedByStig) {
 
 if (-not $rows) {
     $html += "<h2>No Open or Not Reviewed findings</h2>"
-    $html += "<p>All findings for this role appear to be closed or not applicable based on the CSV data.</p>"
+    $html += "<p>All findings for this role appear to be closed or not applicable based on the CSV/CKL data.</p>"
 }
 
 $html += "</div>"   # .page
