@@ -1,61 +1,104 @@
 ---
-- name: Generate STIG Rollup Reports
+- name: Full STIG Pipeline (Prep → Scan → Upload)
   hosts: all
-  gather_facts: no
+  gather_facts: yes  # for ansible_hostname
 
   vars:
-    share_root_unc: "\\\\192.168.10.198\\STIG-Results"
-    stig_roles:
-      - domain_controllers
-      - member_servers
-      - workstations
+    # === Your existing variable names (from group/host vars) ===
+    stig_version: "Evaluate-STIG_1.2507.5"
+    stig_share_path: "\\\\192.168.10.198\\Evaluate-STIG\\{{ stig_version }}"   # <-- SOURCE on fileserver
+    stig_local_path: "C:\\ProgramData\\{{ stig_version }}"                      # <-- DEST on host
+    stig_results_root: "C:\\Users\\Public\\Documents\\STIG_Compliance"
+    smb_share_root: "\\\\192.168.10.198\\STIG-Results"                          # final drop
+    # prefer explicit role var, fall back to group name for folder
+    role_folder: "{{ stig_role_folder | default((group_names | first | lower) | replace('-', '_')) }}"
 
-    # SAME method as STIG pipeline
-    smb_user_effective: "{{ smb_user | default(ansible_user) }}"
-    smb_pass_effective: "{{ smb_pass | default(ansible_password) }}"
+    # Pull SMB creds from survey (preferred), or fall back to AWX machine creds if set there
+    smb_user_effective: "{{ smb_user | default(ansible_user | default('')) }}"
+    smb_pass_effective: "{{ smb_pass | default(ansible_password | default('')) }}"
 
   tasks:
+    ###################################################################
+    # PREP: deploy (or refresh) Evaluate-STIG to the host
+    ###################################################################
+    - name: 🚀 Remove existing Evaluate-STIG directory
+      ansible.windows.win_powershell:
+        script: |
+          if (Test-Path "{{ stig_local_path }}") {
+            Remove-Item -Path "{{ stig_local_path }}" -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
-    ###########################################################################
-    # 1. Ensure rollup folder exists
-    ###########################################################################
-    - name: Ensure rollup directory exists
+    - name: Create Evaluate-STIG directory
       ansible.windows.win_file:
-        path: "C:\\ProgramData\\StigRollup"
+        path: "{{ stig_local_path }}"
         state: directory
 
-    ###########################################################################
-    # 2. Copy rollup script to host
-    ###########################################################################
-    - name: Copy rollup script to host
-      ansible.windows.win_copy:
-        src: "playbooks/scripts/StigRollupReport.ps1"
-        dest: "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1"
-
-    ###########################################################################
-    # 3. Run rollup per role — using SAME SMB CONNECTION METHOD AS STIG PIPELINE
-    ###########################################################################
-    - name: Run STIG Rollup for each role
+    - name: Copy Evaluate-STIG to host (fresh deployment)
       no_log: true
       ansible.windows.win_powershell:
         script: |
           $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
           $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_user_effective }}', $sec)
 
-          # mount share using the trusted STIG pipeline method
-          New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ share_root_unc }}' -Credential $cred -ErrorAction Stop | Out-Null
-
+          New-PSDrive -Name 'Z' -PSProvider FileSystem -Root '{{ stig_share_path }}' -Credential $cred -ErrorAction Stop | Out-Null
           try {
-            $role = '{{ item }}'
-            $outputName = "SummaryReport-{{ item }}.html"
-
-            & "C:\\ProgramData\\StigRollup\\StigRollupReport.ps1" `
-                -ShareRoot "R:\\" `
-                -RoleName $role `
-                -OutputName $outputName
+            Copy-Item -Path 'Z:\*' -Destination '{{ stig_local_path }}' -Recurse -Force -ErrorAction Stop
+          } finally {
+            Remove-PSDrive -Name 'Z' -Force -ErrorAction SilentlyContinue
           }
-          finally {
+
+    ###################################################################
+    # SCAN: run Evaluate-STIG (CKL + CSV) with execution policy bypass
+    ###################################################################
+    - name: ▶️ Run Evaluate-STIG scan (CKL + CSV + Summary)
+      ansible.windows.win_shell: |
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        Set-Location "C:\ProgramData\{{ stig_version }}"
+        .\Evaluate-STIG.ps1 -selectstig dotnet4 -Output "CKL,CSV,Summary"
+      args:
+        executable: PowerShell.exe
+
+    - name: ✅ Scan Done
+      ansible.builtin.debug:
+        msg: "✅ STIG Scan complete on {{ inventory_hostname }}"
+
+    ###################################################################
+    # UPLOAD: copy **Checklist** results to \\server\STIG-Results\<role>\<host>
+    # (No timestamps; keep it simple. Creates missing folders as needed.)
+    ###################################################################
+    - name: 📤 Copy STIG Results to SMB Share
+      no_log: true
+      ansible.windows.win_powershell:
+        script: |
+          $srcRoot   = '{{ stig_results_root }}'
+          $hostName  = $env:COMPUTERNAME
+          $srcHost   = Join-Path -Path $srcRoot -ChildPath $hostName
+          $srcChecks = Join-Path -Path $srcHost -ChildPath 'Checklist'
+
+          if (-not (Test-Path -Path $srcChecks)) {
+            throw "No Evaluate-STIG results at $srcChecks"
+          }
+
+          $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_user_effective }}', $sec)
+
+          New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
+          try {
+            $rolePath = Join-Path -Path 'R:\' -ChildPath '{{ role_folder }}'
+            if (-not (Test-Path -Path $rolePath)) { New-Item -ItemType Directory -Path $rolePath -Force | Out-Null }
+
+            $destHost = Join-Path -Path $rolePath -ChildPath $hostName
+            if (-not (Test-Path -Path $destHost)) { New-Item -ItemType Directory -Path $destHost -Force | Out-Null }
+
+            # Copy the folder contents exactly as they exist locally
+            Copy-Item -Path (Join-Path $srcHost 'Checklist\*') -Destination $destHost -Recurse -Force
+            "Copied to $destHost"
+          } finally {
             Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
           }
 
-      loop: "{{ stig_roles }}"
+    - name: ✅ Summary
+      ansible.builtin.debug:
+        msg:
+          - "📁 Local results: {{ stig_results_root }}\\{{ ansible_hostname }}\\Checklist"
+          - "📤 Uploaded to: {{ smb_share_root }}\\{{ role_folder }}\\{{ ansible_hostname }}"
