@@ -78,7 +78,7 @@
       ansible.windows.win_shell: |
         Set-ExecutionPolicy Bypass -Scope Process -Force
         Set-Location "C:\ProgramData\{{ stig_version }}"
-        .\Evaluate-STIG.ps1 -Output "CKL,CSV,Summary"
+        .\Evaluate-STIG.ps1 -selectstig dotnet4 -Output "CKL,CSV,Summary"
       args:
         executable: PowerShell.exe
 
@@ -87,7 +87,7 @@
         msg: "STIG scan complete on {{ inventory_hostname }}"
 
     ###################################################################
-    # 3. VERIFY — Ensure local results exist before uploading
+    # 3. VERIFY — Make sure Evaluate-STIG produced results
     ###################################################################
     - name: 🔎 Verify local STIG results exist
       ansible.windows.win_powershell:
@@ -99,17 +99,15 @@
           }
 
     ###################################################################
-    # 4. Clear — Remove contents of Checklist folder:
-    #     \\server\STIG-Results\<role>\<hostname>\Checklist\
+    # 4. CLEANUP — clear old results before copying new ones
     ###################################################################
-      - name: 🧹 Clear existing Checklist results on SMB share
+    - name: 🧹 Clear existing Checklist results on SMB share
       no_log: true
       ansible.windows.win_powershell:
         script: |
           $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
           $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_user_effective }}', $sec)
 
-          # Mount STIG-Results
           New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
           try {
             $rolePath = Join-Path 'R:\' '{{ role_folder }}'
@@ -117,16 +115,16 @@
             $checklistPath = Join-Path $hostPath 'Checklist'
 
             if (Test-Path $checklistPath) {
-              Get-ChildItem -Path $checklistPath -Recurse -Force | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+              Get-ChildItem -Path $checklistPath -Recurse -Force |
+                Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
             }
           }
           finally {
             Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
           }
-    
+
     ###################################################################
-    # 5. UPLOAD — Copy results to:
-    #     \\server\STIG-Results\<role>\<hostname>\Checklist\
+    # 5. UPLOAD — Copy fresh results
     ###################################################################
     - name: 📤 Upload STIG Results to SMB share
       no_log: true
@@ -176,7 +174,7 @@
           }
 
     ###################################################################
-    # 6.Summary
+    # Summary
     ###################################################################
     - name: 📊 Pipeline summary
       ansible.builtin.debug:
