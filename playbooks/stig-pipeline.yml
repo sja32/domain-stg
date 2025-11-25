@@ -102,7 +102,7 @@
     # 4. CLEANUP — clear old results before copying new ones
     ###################################################################
     - name: 🧹 Clear existing Checklist results on SMB share
-      no_log: true
+      no_log: false
       ansible.windows.win_powershell:
         script: |
           $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
