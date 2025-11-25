@@ -360,8 +360,9 @@ if (-not $anyFindings) {
 }
 
 # ---------------- Compute per-STIG counts ----------------
-# NEW: High/Medium/Low counts now include BOTH Open and Not_Reviewed.
-# NotReviewedCt still counts all Not_Reviewed findings (all severities).
+# For each STIG:
+#   - HighTotal / MediumTotal / LowTotal = Open + Not_Reviewed at that severity
+#   - NotReviewedCt = total Not_Reviewed (all severities)
 
 foreach ($k in $byStig.Keys) {
     $s = $byStig[$k]
@@ -373,23 +374,27 @@ foreach ($k in $byStig.Keys) {
 
     foreach ($f in $s.Findings.Values) {
         $sev = $f.Severity
-        $sg  = $f.StatusGroup   # Open / Not_Reviewed
+        $sg  = $f.StatusGroup
 
-        switch ($sev) {
-            "High"   { $highTotal++ }
-            "Medium" { $medTotal++ }
-            "Low"    { $lowTotal++ }
+        # Count all "Open + Not_Reviewed" per severity for the header
+        if ($sev -in @("High","Medium","Low") -and $sg -in @("Open","Not_Reviewed")) {
+            switch ($sev) {
+                "High"   { $highTotal++ }
+                "Medium" { $medTotal++  }
+                "Low"    { $lowTotal++  }
+            }
         }
 
+        # Track total Not_Reviewed for the fourth dot
         if ($sg -eq "Not_Reviewed") {
             $nrCount++
         }
     }
 
-    $s.HighTotal      = $highTotal
-    $s.MediumTotal    = $medTotal
-    $s.LowTotal       = $lowTotal
-    $s.NotReviewedCt  = $nrCount
+    $s.HighTotal     = $highTotal
+    $s.MediumTotal   = $medTotal
+    $s.LowTotal      = $lowTotal
+    $s.NotReviewedCt = $nrCount
 
     $byStig[$k] = $s
 }
@@ -483,7 +488,7 @@ p, div {
 .badge-risk { background:#fef3c7; color:#92400e; }
 
 .filter-bar {
-  margin: 10px 0 6px 0;
+  margin: 10px 0 18px 0;
   padding: 8px 10px;
   border-radius: 6px;
   background:#f9fafb;
@@ -496,12 +501,6 @@ p, div {
 }
 .filter-bar input[type=checkbox] {
   vertical-align: middle;
-}
-
-.legend-row {
-  font-size: 12px;
-  margin-bottom: 16px;
-  color:#374151;
 }
 
 table {
@@ -545,6 +544,7 @@ tr:nth-child(even) td {
   padding: 3px 6px;
 }
 
+/* STIG blocks & header chips */
 .stig-block {
   border:1px solid #e5e7eb;
   border-radius: 8px;
@@ -572,10 +572,28 @@ tr:nth-child(even) td {
 .stig-counts {
   font-size: 12px;
   color:#374151;
+  display:flex;
+  gap: 10px;
+  align-items:center;
 }
 .stig-counts span {
-  margin-left:10px;
+  display:flex;
+  align-items:center;
 }
+
+/* Dots for severity chips */
+.dot {
+  display:inline-block;
+  width:8px;
+  height:8px;
+  border-radius:999px;
+  margin-right:4px;
+}
+.dot-high { background:#b91c1c; }   /* red */
+.dot-med  { background:#facc15; }   /* yellow */
+.dot-low  { background:#9ca3af; }   /* gray */
+.dot-nr   { background:#111827; }   /* black */
+
 .stig-body {
   padding: 8px 10px 12px 10px;
 }
@@ -605,20 +623,6 @@ tr:nth-child(even) td {
   margin-top: -8px;
   margin-bottom: 12px;
 }
-
-/* Dot icons for severity summary */
-.dot {
-  display:inline-block;
-  width:10px;
-  height:10px;
-  border-radius:999px;
-  margin-right:4px;
-  vertical-align:middle;
-}
-.dot-high   { background:#ef4444; }  /* red */
-.dot-medium { background:#fbbf24; }  /* yellow */
-.dot-low    { background:#e5e7eb; }  /* light gray */
-.dot-nr     { background:#111827; }  /* almost black */
 </style>
 "@
 
@@ -695,14 +699,6 @@ $html += "<label><input type='checkbox' id='filterLow' checked> Low</label>"
 $html += "<label><input type='checkbox' id='filterNR' checked> Not Reviewed</label>"
 $html += "</div>"
 
-# Optional global legend (matches per-STIG dots)
-$html += "<div class='legend-row'>"
-$html += "<span><span class='dot dot-high'></span><strong>High</strong></span>&nbsp;&nbsp;"
-$html += "<span><span class='dot dot-medium'></span><strong>Medium</strong></span>&nbsp;&nbsp;"
-$html += "<span><span class='dot dot-low'></span><strong>Low</strong></span>&nbsp;&nbsp;"
-$html += "<span><span class='dot dot-nr'></span><strong>Not Reviewed</strong></span>"
-$html += "</div>"
-
 # Per-STIG sections
 foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
 
@@ -716,10 +712,10 @@ foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
     $html += "<summary>"
     $html += "<span class='stig-title'>$encTitle</span>"
     $html += "<span class='stig-counts'>"
-    $html += "<span><span class='dot dot-high'></span><strong>High:</strong> $($s.HighTotal)</span>"
-    $html += "<span><span class='dot dot-medium'></span><strong>Medium:</strong> $($s.MediumTotal)</span>"
-    $html += "<span><span class='dot dot-low'></span><strong>Low:</strong> $($s.LowTotal)</span>"
-    $html += "<span><span class='dot dot-nr'></span><strong>Not Reviewed:</strong> $($s.NotReviewedCt)</span>"
+    $html += "<span><span class='dot dot-high'></span><strong>High</strong>: $($s.HighTotal)</span>"
+    $html += "<span><span class='dot dot-med'></span><strong>Med</strong>: $($s.MediumTotal)</span>"
+    $html += "<span><span class='dot dot-low'></span><strong>Low</strong>: $($s.LowTotal)</span>"
+    $html += "<span><span class='dot dot-nr'></span><strong>Not Reviewed</strong>: $($s.NotReviewedCt)</span>"
     $html += "</span>"
     $html += "</summary>"
     $html += "<div class='stig-body'>"
@@ -793,10 +789,10 @@ foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
         $script:html += "</table>"
     }
 
-    Add-GroupTable -Label "High Severity (Open)"    -RowsRef $highRows
-    Add-GroupTable -Label "Medium Severity (Open)"  -RowsRef $medRows
-    Add-GroupTable -Label "Low Severity (Open)"     -RowsRef $lowRows
-    Add-GroupTable -Label "Not Reviewed"            -RowsRef $nrRows
+    Add-GroupTable -Label "High Severity (Open)"   -RowsRef $highRows
+    Add-GroupTable -Label "Medium Severity (Open)" -RowsRef $medRows
+    Add-GroupTable -Label "Low Severity (Open)"    -RowsRef $lowRows
+    Add-GroupTable -Label "Not Reviewed"           -RowsRef $nrRows
 
     $html += "</div>"  # .stig-body
     $html += "</details>"
