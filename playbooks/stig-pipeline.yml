@@ -99,7 +99,33 @@
           }
 
     ###################################################################
-    # 4. UPLOAD — Copy results to:
+    # 4. Clear — Remove contents of Checklist folder:
+    #     \\server\STIG-Results\<role>\<hostname>\Checklist\
+    ###################################################################
+      - name: 🧹 Clear existing Checklist results on SMB share
+      no_log: true
+      ansible.windows.win_powershell:
+        script: |
+          $sec  = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential ('{{ smb_user_effective }}', $sec)
+
+          # Mount STIG-Results
+          New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred -ErrorAction Stop | Out-Null
+          try {
+            $rolePath = Join-Path 'R:\' '{{ role_folder }}'
+            $hostPath = Join-Path $rolePath $env:COMPUTERNAME
+            $checklistPath = Join-Path $hostPath 'Checklist'
+
+            if (Test-Path $checklistPath) {
+              Get-ChildItem -Path $checklistPath -Recurse -Force | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+            }
+          }
+          finally {
+            Remove-PSDrive -Name 'R' -Force -ErrorAction SilentlyContinue
+          }
+    
+    ###################################################################
+    # 5. UPLOAD — Copy results to:
     #     \\server\STIG-Results\<role>\<hostname>\Checklist\
     ###################################################################
     - name: 📤 Upload STIG Results to SMB share
@@ -150,7 +176,7 @@
           }
 
     ###################################################################
-    # Summary
+    # 6.Summary
     ###################################################################
     - name: 📊 Pipeline summary
       ansible.builtin.debug:
