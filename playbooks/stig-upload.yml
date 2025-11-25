@@ -1,0 +1,70 @@
+---
+- name: STIG Upload (Copy Results to SMB Share)
+  hosts: all
+  gather_facts: yes
+
+  vars:
+    stig_results_root: "C:\\Users\\Public\\Documents\\STIG_Compliance"
+    smb_share_root: "\\\\192.168.10.198\\STIG-Results"
+    smb_user_effective: "{{ smb_user | default(ansible_user) }}"
+    smb_pass_effective: "{{ smb_pass | default(ansible_password) }}"
+    role_folder: >-
+      {{
+        (group_names
+          | select('in', ['domain_controllers', 'member_servers', 'workstations'])
+          | list
+          | first
+        ) | default('unassigned')
+      }}
+
+  tasks:
+    - name: 🔎 Confirm local STIG results exist
+      ansible.windows.win_powershell:
+        script: |
+          $path = Join-Path '{{ stig_results_root }}' $env:COMPUTERNAME
+          $check = Join-Path $path 'Checklist'
+          if (-not (Test-Path $check)) { throw "Missing results at $check" }
+
+    - name: 🧹 Clear existing Checklist results in SMB share
+      no_log: true
+      ansible.windows.win_powershell:
+        script: |
+          $sec = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential('{{ smb_user_effective }}', $sec)
+
+          New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred | Out-Null
+          try {
+            $role = '{{ role_folder }}'
+            $host = $env:COMPUTERNAME
+
+            $folder = "R:\$role\$host\Checklist"
+            if (Test-Path $folder) {
+              Get-ChildItem -Path $folder -Recurse -Force | Remove-Item -Force -Recurse
+            }
+          } finally {
+            Remove-PSDrive 'R' -Force
+          }
+
+    - name: 📤 Upload new STIG results to SMB share
+      no_log: true
+      ansible.windows.win_powershell:
+        script: |
+          $sec = ConvertTo-SecureString '{{ smb_pass_effective }}' -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential('{{ smb_user_effective }}', $sec)
+
+          $srcRoot = '{{ stig_results_root }}'
+          $host = $env:COMPUTERNAME
+          $srcChecklist = Join-Path (Join-Path $srcRoot $host) 'Checklist'
+
+          New-PSDrive -Name 'R' -PSProvider FileSystem -Root '{{ smb_share_root }}' -Credential $cred | Out-Null
+          try {
+            $destChecklist = "R:\{{ role_folder }}\$host\Checklist"
+
+            if (-not (Test-Path $destChecklist)) {
+              New-Item -ItemType Directory -Path $destChecklist -Force | Out-Null
+            }
+
+            Copy-Item "$srcChecklist\*" $destChecklist -Recurse -Force
+          } finally {
+            Remove-PSDrive 'R' -Force
+          }
