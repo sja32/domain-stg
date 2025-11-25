@@ -1,0 +1,25 @@
+---
+- name: STIG Scan (Run Evaluate-STIG)
+  hosts: all
+  gather_facts: yes
+
+  vars:
+    stig_version: "Evaluate-STIG_1.2507.5"
+    stig_local_path: "C:\\ProgramData\\{{ stig_version }}"
+    stig_results_root: "C:\\Users\\Public\\Documents\\STIG_Compliance"
+
+  tasks:
+    - name: ▶️ Run Evaluate-STIG scan
+      ansible.windows.win_shell: |
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        Set-Location "C:\\ProgramData\\{{ stig_version }}"
+        .\Evaluate-STIG.ps1 -Output "CKL,CSV,Summary"
+      args:
+        executable: PowerShell.exe
+
+    - name: 🔎 Verify output exists
+      ansible.windows.win_powershell:
+        script: |
+          $path = Join-Path '{{ stig_results_root }}' $env:COMPUTERNAME
+          $check = Join-Path $path 'Checklist'
+          if (-not (Test-Path $check)) { throw "Missing Evaluate-STIG output at $check" }
