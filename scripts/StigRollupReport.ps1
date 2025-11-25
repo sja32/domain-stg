@@ -360,35 +360,36 @@ if (-not $anyFindings) {
 }
 
 # ---------------- Compute per-STIG counts ----------------
+# NEW: High/Medium/Low counts now include BOTH Open and Not_Reviewed.
+# NotReviewedCt still counts all Not_Reviewed findings (all severities).
 
 foreach ($k in $byStig.Keys) {
     $s = $byStig[$k]
 
-    $highOpen = 0
-    $medOpen  = 0
-    $lowOpen  = 0
-    $nrCount  = 0
+    $highTotal = 0
+    $medTotal  = 0
+    $lowTotal  = 0
+    $nrCount   = 0
 
     foreach ($f in $s.Findings.Values) {
         $sev = $f.Severity
-        $sg  = $f.StatusGroup
+        $sg  = $f.StatusGroup   # Open / Not_Reviewed
 
-        if ($sg -eq "Open") {
-            switch ($sev) {
-                "High"   { $highOpen++ }
-                "Medium" { $medOpen++ }
-                "Low"    { $lowOpen++ }
-            }
+        switch ($sev) {
+            "High"   { $highTotal++ }
+            "Medium" { $medTotal++ }
+            "Low"    { $lowTotal++ }
         }
-        elseif ($sg -eq "Not_Reviewed") {
+
+        if ($sg -eq "Not_Reviewed") {
             $nrCount++
         }
     }
 
-    $s.HighOpen      = $highOpen
-    $s.MediumOpen    = $medOpen
-    $s.LowOpen       = $lowOpen
-    $s.NotReviewedCt = $nrCount
+    $s.HighTotal      = $highTotal
+    $s.MediumTotal    = $medTotal
+    $s.LowTotal       = $lowTotal
+    $s.NotReviewedCt  = $nrCount
 
     $byStig[$k] = $s
 }
@@ -482,7 +483,7 @@ p, div {
 .badge-risk { background:#fef3c7; color:#92400e; }
 
 .filter-bar {
-  margin: 10px 0 18px 0;
+  margin: 10px 0 6px 0;
   padding: 8px 10px;
   border-radius: 6px;
   background:#f9fafb;
@@ -495,6 +496,12 @@ p, div {
 }
 .filter-bar input[type=checkbox] {
   vertical-align: middle;
+}
+
+.legend-row {
+  font-size: 12px;
+  margin-bottom: 16px;
+  color:#374151;
 }
 
 table {
@@ -565,29 +572,10 @@ tr:nth-child(even) td {
 .stig-counts {
   font-size: 12px;
   color:#374151;
-  font-weight:600;
-  display:flex;
-  flex-wrap:wrap;
-  justify-content:flex-end;
-  align-items:center;
 }
-.stig-count-pill {
-  display:inline-flex;
-  align-items:center;
-  margin-left:12px;
+.stig-counts span {
+  margin-left:10px;
 }
-.sev-dot {
-  width:10px;
-  height:10px;
-  border-radius:999px;
-  display:inline-block;
-  margin-right:4px;
-}
-.sev-dot-high { background:#ef4444; }     /* red */
-.sev-dot-medium { background:#fbbf24; }   /* yellow/gold */
-.sev-dot-low { background:#9ca3af; }      /* gray */
-.sev-dot-nr { background:#111827; }       /* almost black */
-
 .stig-body {
   padding: 8px 10px 12px 10px;
 }
@@ -617,6 +605,20 @@ tr:nth-child(even) td {
   margin-top: -8px;
   margin-bottom: 12px;
 }
+
+/* Dot icons for severity summary */
+.dot {
+  display:inline-block;
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  margin-right:4px;
+  vertical-align:middle;
+}
+.dot-high   { background:#ef4444; }  /* red */
+.dot-medium { background:#fbbf24; }  /* yellow */
+.dot-low    { background:#e5e7eb; }  /* light gray */
+.dot-nr     { background:#111827; }  /* almost black */
 </style>
 "@
 
@@ -693,6 +695,14 @@ $html += "<label><input type='checkbox' id='filterLow' checked> Low</label>"
 $html += "<label><input type='checkbox' id='filterNR' checked> Not Reviewed</label>"
 $html += "</div>"
 
+# Optional global legend (matches per-STIG dots)
+$html += "<div class='legend-row'>"
+$html += "<span><span class='dot dot-high'></span><strong>High</strong></span>&nbsp;&nbsp;"
+$html += "<span><span class='dot dot-medium'></span><strong>Medium</strong></span>&nbsp;&nbsp;"
+$html += "<span><span class='dot dot-low'></span><strong>Low</strong></span>&nbsp;&nbsp;"
+$html += "<span><span class='dot dot-nr'></span><strong>Not Reviewed</strong></span>"
+$html += "</div>"
+
 # Per-STIG sections
 foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
 
@@ -706,32 +716,11 @@ foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
     $html += "<summary>"
     $html += "<span class='stig-title'>$encTitle</span>"
     $html += "<span class='stig-counts'>"
-
-    # High
-    $html += "<span class='stig-count-pill'>"
-    $html += "<span class='sev-dot sev-dot-high'></span>"
-    $html += "<span><strong>High:</strong> $($s.HighOpen)</span>"
+    $html += "<span><span class='dot dot-high'></span><strong>High:</strong> $($s.HighTotal)</span>"
+    $html += "<span><span class='dot dot-medium'></span><strong>Medium:</strong> $($s.MediumTotal)</span>"
+    $html += "<span><span class='dot dot-low'></span><strong>Low:</strong> $($s.LowTotal)</span>"
+    $html += "<span><span class='dot dot-nr'></span><strong>Not Reviewed:</strong> $($s.NotReviewedCt)</span>"
     $html += "</span>"
-
-    # Medium
-    $html += "<span class='stig-count-pill'>"
-    $html += "<span class='sev-dot sev-dot-medium'></span>"
-    $html += "<span><strong>Medium:</strong> $($s.MediumOpen)</span>"
-    $html += "</span>"
-
-    # Low
-    $html += "<span class='stig-count-pill'>"
-    $html += "<span class='sev-dot sev-dot-low'></span>"
-    $html += "<span><strong>Low:</strong> $($s.LowOpen)</span>"
-    $html += "</span>"
-
-    # Not Reviewed
-    $html += "<span class='stig-count-pill'>"
-    $html += "<span class='sev-dot sev-dot-nr'></span>"
-    $html += "<span><strong>Not Reviewed:</strong> $($s.NotReviewedCt)</span>"
-    $html += "</span>"
-
-    $html += "</span>"   # .stig-counts
     $html += "</summary>"
     $html += "<div class='stig-body'>"
 
@@ -804,10 +793,10 @@ foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
         $script:html += "</table>"
     }
 
-    Add-GroupTable -Label "High Severity (Open)"   -RowsRef $highRows
-    Add-GroupTable -Label "Medium Severity (Open)" -RowsRef $medRows
-    Add-GroupTable -Label "Low Severity (Open)"    -RowsRef $lowRows
-    Add-GroupTable -Label "Not Reviewed"           -RowsRef $nrRows
+    Add-GroupTable -Label "High Severity (Open)"    -RowsRef $highRows
+    Add-GroupTable -Label "Medium Severity (Open)"  -RowsRef $medRows
+    Add-GroupTable -Label "Low Severity (Open)"     -RowsRef $lowRows
+    Add-GroupTable -Label "Not Reviewed"            -RowsRef $nrRows
 
     $html += "</div>"  # .stig-body
     $html += "</details>"
