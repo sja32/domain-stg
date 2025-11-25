@@ -176,7 +176,7 @@ $cat3Open  = 0
 
 $anyFindings = $false
 
-# ---------------- Parse CKLs ----------------
+# ---------------- Parse CKLs (de-dup per role) ----------------
 
 foreach ($hostFolder in $hostFolders) {
     $hostName = $hostFolder.Name
@@ -209,7 +209,7 @@ foreach ($hostFolder in $hostFolders) {
             continue
         }
 
-        # Collect iSTIG nodes
+        # Collect iSTIG nodes (normally one per CKL, but we handle multiples safely)
         $iStigs = @()
         foreach ($child in $xml.CHECKLIST.STIGS.ChildNodes) {
             if ($child.Name -match "i?STIG") { $iStigs += $child }
@@ -319,7 +319,7 @@ foreach ($hostFolder in $hostFolders) {
 
                 $anyFindings = $true
 
-                # ---------- Per-STIG finding de-duplication ----------
+                # ---------- Per-STIG finding de-duplication (per role) ----------
                 $rowKey = if ($vulnId) { $vulnId } else { $ruleId }
 
                 if (-not $stigEntry.Findings.ContainsKey($rowKey)) {
@@ -357,46 +357,6 @@ foreach ($hostFolder in $hostFolders) {
 
 if (-not $anyFindings) {
     throw "No Open or Not Reviewed findings detected under $rolePath."
-}
-
-# ---------------- Compute per-STIG counts ----------------
-# For each STIG:
-#   - HighTotal / MediumTotal / LowTotal = Open + Not_Reviewed at that severity
-#   - NotReviewedCt = total Not_Reviewed (all severities)
-
-foreach ($k in $byStig.Keys) {
-    $s = $byStig[$k]
-
-    $highTotal = 0
-    $medTotal  = 0
-    $lowTotal  = 0
-    $nrCount   = 0
-
-    foreach ($f in $s.Findings.Values) {
-        $sev = $f.Severity
-        $sg  = $f.StatusGroup
-
-        # Count all "Open + Not_Reviewed" per severity for the header
-        if ($sev -in @("High","Medium","Low") -and $sg -in @("Open","Not_Reviewed")) {
-            switch ($sev) {
-                "High"   { $highTotal++ }
-                "Medium" { $medTotal++  }
-                "Low"    { $lowTotal++  }
-            }
-        }
-
-        # Track total Not_Reviewed for the fourth dot
-        if ($sg -eq "Not_Reviewed") {
-            $nrCount++
-        }
-    }
-
-    $s.HighTotal     = $highTotal
-    $s.MediumTotal   = $medTotal
-    $s.LowTotal      = $lowTotal
-    $s.NotReviewedCt = $nrCount
-
-    $byStig[$k] = $s
 }
 
 # ---------------- CORA Risk Rating (role level) ----------------
@@ -544,7 +504,6 @@ tr:nth-child(even) td {
   padding: 3px 6px;
 }
 
-/* STIG blocks & header chips */
 .stig-block {
   border:1px solid #e5e7eb;
   border-radius: 8px;
@@ -573,26 +532,40 @@ tr:nth-child(even) td {
   font-size: 12px;
   color:#374151;
   display:flex;
-  gap: 10px;
+  gap:12px;
   align-items:center;
 }
-.stig-counts span {
-  display:flex;
+.sev-chip {
+  display:inline-flex;
   align-items:center;
+  font-weight:600;
 }
-
-/* Dots for severity chips */
-.dot {
+.sev-chip-label {
+  margin-right: 2px;
+}
+.sev-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
   display:inline-block;
-  width:8px;
-  height:8px;
-  border-radius:999px;
   margin-right:4px;
 }
-.dot-high { background:#b91c1c; }   /* red */
-.dot-med  { background:#facc15; }   /* yellow */
-.dot-low  { background:#9ca3af; }   /* gray */
-.dot-nr   { background:#111827; }   /* black */
+.sev-dot.high {
+  background: #ef4444;
+  box-shadow: 0 0 0 2px rgba(248,113,113,0.35);
+}
+.sev-dot.medium {
+  background: #facc15;
+  box-shadow: 0 0 0 2px rgba(250,204,21,0.35);
+}
+.sev-dot.low {
+  background: #e5e7eb;
+  box-shadow: 0 0 0 2px rgba(209,213,219,0.6);
+}
+.sev-dot.nr {
+  background: #111827;
+  box-shadow: 0 0 0 2px rgba(17,24,39,0.5);
+}
 
 .stig-body {
   padding: 8px 10px 12px 10px;
@@ -699,7 +672,7 @@ $html += "<label><input type='checkbox' id='filterLow' checked> Low</label>"
 $html += "<label><input type='checkbox' id='filterNR' checked> Not Reviewed</label>"
 $html += "</div>"
 
-# Per-STIG sections
+# ---------------- Per-STIG sections (counts computed here so they're always in sync) ----------------
 foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
 
     # Skip STIGs that ended up with no Open/NR findings
@@ -707,22 +680,6 @@ foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
 
     $encTitle   = [System.Web.HttpUtility]::HtmlEncode($s.DisplayTitle)
     $encRelease = if ($s.ReleaseText) { [System.Web.HttpUtility]::HtmlEncode($s.ReleaseText) } else { "" }
-
-    $html += "<details class='stig-block'>"
-    $html += "<summary>"
-    $html += "<span class='stig-title'>$encTitle</span>"
-    $html += "<span class='stig-counts'>"
-    $html += "<span><span class='dot dot-high'></span><strong>High</strong>: $($s.HighTotal)</span>"
-    $html += "<span><span class='dot dot-med'></span><strong>Med</strong>: $($s.MediumTotal)</span>"
-    $html += "<span><span class='dot dot-low'></span><strong>Low</strong>: $($s.LowTotal)</span>"
-    $html += "<span><span class='dot dot-nr'></span><strong>Not Reviewed</strong>: $($s.NotReviewedCt)</span>"
-    $html += "</span>"
-    $html += "</summary>"
-    $html += "<div class='stig-body'>"
-
-    if ($s.ReleaseText) {
-        $html += ("<div class='stig-meta'>Release Info: {0}</div>" -f $encRelease)
-    }
 
     # Group findings
     $highRows = @()
@@ -742,6 +699,28 @@ foreach ($s in ($byStig.Values | Sort-Object DisplayTitle)) {
         elseif ($f.StatusGroup -eq "Not_Reviewed") {
             $nrRows += $f
         }
+    }
+
+    # Per-STIG counts (these drive the chips AND match the tables)
+    $highCount = $highRows.Count
+    $medCount  = $medRows.Count
+    $lowCount  = $lowRows.Count
+    $nrCount   = $nrRows.Count
+
+    $html += "<details class='stig-block'>"
+    $html += "<summary>"
+    $html += "<span class='stig-title'>$encTitle</span>"
+    $html += "<span class='stig-counts'>"
+    $html += "<span class='sev-chip'><span class='sev-dot high'></span><span class='sev-chip-label'>High:</span> $highCount</span>"
+    $html += "<span class='sev-chip'><span class='sev-dot medium'></span><span class='sev-chip-label'>Medium:</span> $medCount</span>"
+    $html += "<span class='sev-chip'><span class='sev-dot low'></span><span class='sev-chip-label'>Low:</span> $lowCount</span>"
+    $html += "<span class='sev-chip'><span class='sev-dot nr'></span><span class='sev-chip-label'>Not Reviewed:</span> $nrCount</span>"
+    $html += "</span>"
+    $html += "</summary>"
+    $html += "<div class='stig-body'>"
+
+    if ($s.ReleaseText) {
+        $html += ("<div class='stig-meta'>Release Info: {0}</div>" -f $encRelease)
     }
 
     function Add-GroupTable {
