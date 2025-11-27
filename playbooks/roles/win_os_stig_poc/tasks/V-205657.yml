@@ -1,7 +1,11 @@
 ---
-# V-205657 — Windows Firewall must be enabled
+# V-205657 — Firewall must be enabled
 
-- name: Ensure Windows Firewall is enabled for all profiles
+- name: ▶️ [V-205657] Starting remediation: Windows Firewall
+  ansible.builtin.debug:
+    msg: "Applying STIG V-205657 (Enable Firewall)"
+
+- name: Enable Windows Firewall for all profiles
   ansible.windows.win_firewall_profile:
     profile: "{{ item }}"
     state: enabled
@@ -10,3 +14,6 @@
     - Private
     - Public
 
+- name: ✔️ [V-205657] Completed remediation
+  ansible.builtin.debug:
+    msg: "Completed STIG V-205657"
