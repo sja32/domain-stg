@@ -1,1 +1,41 @@
+---
+# V-254260 — Nonsystem-created file shares must limit access to
+# groups that require it.
+#
+# PoC approach:
+#   - Enumerate SMB shares via Get-SmbShare.
+#   - Skip system shares: C$, ADMIN$, IPC$.
+#   - For each non-system share, remove 'Everyone' from share permissions.
+#   - NTFS ACLs are left intact (admin can harden further if desired).
+
+- name: "▶️ [V-254260] Starting remediation: Harden non-system SMB shares"
+  ansible.builtin.debug:
+    msg: "Applying V-254260 (Remove 'Everyone' from non-system SMB share ACLs)"
+
+- name: "Remove 'Everyone' from non-system SMB share permissions"
+  ansible.windows.win_shell: |
+    $systemShares = @('C$','ADMIN$','IPC$')
+    $shares = Get-SmbShare | Where-Object { $systemShares -notcontains $_.Name }
+
+    if (-not $shares) {
+        Write-Output "No non-system SMB shares found. Nothing to remediate."
+        return
+    }
+
+    foreach ($share in $shares) {
+        Write-Output "Processing share: $($share.Name)"
+
+        try {
+            Revoke-SmbShareAccess -Name $share.Name -AccountName 'Everyone' -Force -ErrorAction SilentlyContinue
+            Write-Output "  -> Removed 'Everyone' from share '$($share.Name)' (if present)."
+        }
+        catch {
+            Write-Output "  -> Failed to adjust share '$($share.Name)': $($_.Exception.Message)"
+        }
+    }
+  register: v254260_share_hardening
+
+- name: "📋 [V-254260] Share hardening report"
+  ansible.builtin.debug:
+    var: v254260_share_hardening.stdout
 
