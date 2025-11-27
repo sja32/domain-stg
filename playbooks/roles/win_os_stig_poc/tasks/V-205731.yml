@@ -1,5 +1,9 @@
 ---
-# V-205731 — UAC must be enabled (EnableLUA = 1)
+# V-205731 — UAC must be enabled
+
+- name: ▶️ [V-205731] Starting remediation: UAC EnableLUA
+  ansible.builtin.debug:
+    msg: "Applying STIG V-205731 (UAC EnableLUA = 1)"
 
 - name: Enable UAC Admin Approval Mode
   ansible.windows.win_regedit:
@@ -8,3 +12,6 @@
     data: 1
     type: dword
 
+- name: ✔️ [V-205731] Completed remediation
+  ansible.builtin.debug:
+    msg: "Completed STIG V-205731"
