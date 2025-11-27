@@ -1,1 +1,9 @@
+---
+# Maps STIG control → remediation task file
+win_os_stig_poc_control_map:
+  V-205733: "V-205733.yml"
+  V-205730: "V-205730.yml"
+  V-205698: "V-205698.yml"
+  V-205731: "V-205731.yml"
+  V-205657: "V-205657.yml"
 
