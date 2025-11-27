@@ -1,1 +1,55 @@
+---
+# V-254244 — Shared user accounts must not be permitted.
+#
+# PoC approach:
+#   - Detection-only.
+#   - Identify "suspicious" local accounts that might be shared based on name:
+#       * contains 'shared', 'test', 'temp', 'guest'
+#   - Exclude Administrator, allensj, and svc-*.
+#   - Log candidate accounts for manual review.
+
+- name: "▶️ [V-254244] Starting detection: Potential shared local accounts"
+  ansible.builtin.debug:
+    msg: "Applying V-254244 (Detect potential shared accounts; excludes Administrator, allensj, svc-*)"
+
+- name: "Detect potential shared local accounts (detection only)"
+  ansible.windows.win_shell: |
+    $excludedNames    = @('Administrator','allensj')
+    $excludedPrefixes = @('svc-')
+
+    $patterns = @('shared','test','temp','guest')
+
+    $users = Get-LocalUser | Where-Object { $_.Enabled -eq $true }
+
+    $candidates = foreach ($u in $users) {
+        $name = $u.Name
+
+        # Excludes
+        if ($excludedNames -contains $name) { continue }
+        foreach ($prefix in $excludedPrefixes) {
+            if ($name -like "$prefix*") { continue 2 }
+        }
+
+        $lowerName = $name.ToLower()
+
+        $isMatch = $false
+        foreach ($p in $patterns) {
+            if ($lowerName -like "*$p*") { $isMatch = $true; break }
+        }
+
+        if ($isMatch) { $u }
+    }
+
+    if (-not $candidates) {
+        Write-Output "No potential shared local accounts detected based on naming patterns."
+    }
+    else {
+        Write-Output "Potential shared local accounts (naming pattern-based detection):"
+        $candidates | Select-Object Name, Enabled | Format-Table -AutoSize | Out-String
+    }
+  register: v254244_shared_candidates
+
+- name: "📋 [V-254244] Potential shared account report"
+  ansible.builtin.debug:
+    var: v254244_shared_candidates.stdout
 
