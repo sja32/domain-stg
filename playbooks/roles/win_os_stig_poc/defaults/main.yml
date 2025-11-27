@@ -1,14 +1,27 @@
 ---
-# Default enabled controls for PoC
+# Which controls are enabled in this PoC
 win_os_stig_poc_controls:
-  V-205733:   # Disable TLS 1.0/1.1
+  V-254242:  # App/service acct passwords minimum length
     enabled: true
-  V-205730:   # Enable TLS 1.2
+  V-254243:  # App/service acct passwords changed annually
     enabled: true
-  V-205698:   # Audit Logon events
+  V-254244:  # Shared user accounts not permitted
     enabled: true
-  V-205731:   # UAC Admin Approval Mode
+  V-254260:  # Nonsystem shares must restrict access
     enabled: true
-  V-205657:   # Windows Firewall enabled
+  V-254267:  # Temporary accounts must expire in 72 hours
+    enabled: true
+  V-254268:  # Emergency accounts must expire in 72 hours
     enabled: true
 
+# Global excludes for account-based checks
+win_os_stig_poc_excluded_accounts:
+  - Administrator
+  - allensj
+
+# Prefix-style excludes (wildcards handled in PowerShell)
+win_os_stig_poc_excluded_prefixes:
+  - 'svc-'
+
+# For V-254243: how many days before a password is considered "stale"
+win_os_stig_poc_password_max_age_days: 365
