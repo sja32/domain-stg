@@ -1,1 +1,53 @@
+---
+# V-254243 — Manually managed application account passwords must be
+# changed at least annually or when an admin with knowledge leaves.
+#
+# PoC approach:
+#   - Detect local accounts whose PasswordLastSet is older than configured
+#     max age (default 365 days) OR never set.
+#   - Exclude Administrator, allensj, and svc-* from evaluation.
+#   - Log results for manual follow-up instead of auto-rotating passwords.
+
+- name: "▶️ [V-254243] Starting detection: Stale app/service account passwords"
+  ansible.builtin.debug:
+    msg: "Applying V-254243 (Detect local accounts with PasswordLastSet older than {{ win_os_stig_poc_password_max_age_days }} days)"
+
+- name: "Detect local accounts with stale passwords (detection only)"
+  ansible.windows.win_shell: |
+    $maxAgeDays   = {{ win_os_stig_poc_password_max_age_days }}
+    $cutoff       = (Get-Date).AddDays(-$maxAgeDays)
+
+    $excludedNames   = @('Administrator','allensj')
+    $excludedPrefixes = @('svc-')
+
+    $users = Get-LocalUser | Where-Object { $_.Enabled -eq $true }
+
+    $candidates = $users | Where-Object {
+        $name = $_.Name
+
+        # Exclude exact names
+        if ($excludedNames -contains $name) { return $false }
+
+        # Exclude svc-* style accounts
+        foreach ($prefix in $excludedPrefixes) {
+            if ($name -like "$prefix*") { return $false }
+        }
+
+        # Consider stale if PasswordLastSet is null or older than cutoff
+        if ($_.PasswordLastSet -eq $null) { return $true }
+        return ($_.PasswordLastSet -lt $cutoff)
+    }
+
+    if (-not $candidates) {
+        Write-Output "No local accounts with stale passwords detected."
+    }
+    else {
+        Write-Output "Local accounts with stale passwords (older than $maxAgeDays days or never set):"
+        $candidates | Select-Object Name, PasswordLastSet | Format-Table -AutoSize | Out-String
+    }
+  register: v254243_stale_accounts
+
+- name: "📋 [V-254243] Stale account password report"
+  ansible.builtin.debug:
+    var: v254243_stale_accounts.stdout
 
