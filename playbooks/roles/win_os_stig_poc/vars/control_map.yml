@@ -1,9 +1,10 @@
 ---
-# Maps STIG control → remediation task file
-win_os_stig_poc_control_map:
-  V-205733: "V-205733.yml"
-  V-205730: "V-205730.yml"
-  V-205698: "V-205698.yml"
-  V-205731: "V-205731.yml"
-  V-205657: "V-205657.yml"
+# Maps V-ID to task file name for include_tasks logic
 
+win_os_stig_poc_control_map:
+  V-254242: "V-254242.yml"
+  V-254243: "V-254243.yml"
+  V-254244: "V-254244.yml"
+  V-254260: "V-254260.yml"
+  V-254267: "V-254267.yml"
+  V-254268: "V-254268.yml"
