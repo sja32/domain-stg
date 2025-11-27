@@ -1,1 +1,17 @@
+---
+# V-205733 — TLS 1.0 and 1.1 must be disabled
+
+- name: Disable TLS 1.0 Server
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server
+    name: Enabled
+    data: 0
+    type: dword
+
+- name: Disable TLS 1.1 Server
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server
+    name: Enabled
+    data: 0
+    type: dword
 
