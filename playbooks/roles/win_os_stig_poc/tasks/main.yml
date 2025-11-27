@@ -3,6 +3,23 @@
   ansible.builtin.include_vars:
     file: control_map.yml
 
+- name: 📝 Display selected STIG controls for remediation
+  ansible.builtin.debug:
+    msg: |
+      *****************************************************
+      Windows OS STIG Remediation (PoC)
+      Target Host: {{ inventory_hostname }}
+      Selected Controls:
+      {{ (stig_remediation_list | default(windows_selected_controls)) | to_nice_yaml }}
+      *****************************************************
+  vars:
+    windows_selected_controls: >-
+      {{ win_os_stig_poc_controls
+          | dict2items
+          | selectattr('value.enabled', 'equalto', true)
+          | map(attribute='key')
+          | list }}
+
 # Determine which controls to run
 - name: Build effective remediation list
   ansible.builtin.set_fact:
@@ -17,9 +34,12 @@
           )
       }}
 
+- name: 🧩 Effective control list (post-merge)
+  ansible.builtin.debug:
+    var: win_os_stig_poc_effective_list
+
 - name: Run remediation tasks for each selected control
   ansible.builtin.include_tasks: "{{ win_os_stig_poc_control_map[item] }}"
   loop: "{{ win_os_stig_poc_effective_list }}"
   loop_control:
     label: "{{ item }}"
-
