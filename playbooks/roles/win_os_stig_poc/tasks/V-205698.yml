@@ -1,16 +1,15 @@
 ---
-# V-205698 — Audit Logon events must log success and failure
+# V-205698 — Audit Logon events must log Success and Failure
 
 - name: "▶️ [V-205698] Starting remediation: Audit Logon Events"
   ansible.builtin.debug:
     msg: "Applying STIG V-205698 (Audit Logon)"
 
-- name: Ensure 'Audit Logon' is configured for Success and Failure
-  ansible.windows.win_audit_policy_system:
-    category: Logon/Logoff
+- name: Configure 'Audit Logon' for Success and Failure
+  ansible.windows.win_audit_policy:
     subcategory: Logon
     audit_type: success, failure
 
-- name: ✔️ [V-205698] Completed remediation
+- name: "✔️ [V-205698] Completed remediation"
   ansible.builtin.debug:
     msg: "Completed STIG V-205698"
