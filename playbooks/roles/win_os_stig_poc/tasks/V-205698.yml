@@ -1,1 +1,9 @@
+---
+# V-205698 — Audit Logon events must log Success and Failure
+
+- name: Ensure 'Audit Logon' is configured for Success and Failure
+  ansible.windows.win_audit_policy_system:
+    category: Logon/Logoff
+    subcategory: Logon
+    audit_type: success, failure
 
