@@ -1,1 +1,10 @@
+---
+# V-205731 — UAC must be enabled (EnableLUA = 1)
+
+- name: Enable UAC Admin Approval Mode
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+    name: EnableLUA
+    data: 1
+    type: dword
 
