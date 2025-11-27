@@ -1,7 +1,7 @@
 ---
 # V-205731 — UAC must be enabled
 
-- name: ▶️ [V-205731] Starting remediation: UAC EnableLUA
+- name: "▶️ [V-205731] Starting remediation: UAC EnableLUA"
   ansible.builtin.debug:
     msg: "Applying STIG V-205731 (UAC EnableLUA = 1)"
 
