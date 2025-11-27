@@ -1,1 +1,14 @@
+---
+# Default enabled controls for PoC
+win_os_stig_poc_controls:
+  V-205733:   # Disable TLS 1.0/1.1
+    enabled: true
+  V-205730:   # Enable TLS 1.2
+    enabled: true
+  V-205698:   # Audit Logon events
+    enabled: true
+  V-205731:   # UAC Admin Approval Mode
+    enabled: true
+  V-205657:   # Windows Firewall enabled
+    enabled: true
 
