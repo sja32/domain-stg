@@ -1,1 +1,25 @@
+---
+- name: Load control map
+  ansible.builtin.include_vars:
+    file: control_map.yml
+
+# Determine which controls to run
+- name: Build effective remediation list
+  ansible.builtin.set_fact:
+    win_os_stig_poc_effective_list: >-
+      {{ stig_remediation_list
+        | default(
+            win_os_stig_poc_controls
+            | dict2items
+            | selectattr('value.enabled', 'equalto', true)
+            | map(attribute='key')
+            | list
+          )
+      }}
+
+- name: Run remediation tasks for each selected control
+  ansible.builtin.include_tasks: "{{ win_os_stig_poc_control_map[item] }}"
+  loop: "{{ win_os_stig_poc_effective_list }}"
+  loop_control:
+    label: "{{ item }}"
 
