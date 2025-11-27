@@ -1,1 +1,60 @@
+---
+# V-254268 — Emergency accounts must automatically expire within 72 hours.
+#
+# PoC approach:
+#   - Detection-only.
+#   - Identify local accounts whose name or description suggests "emergency"/
+#     "break glass" usage.
+#   - Exclude Administrator, allensj, svc-*.
+#   - Log for manual follow-up (usually handled in AD, not local SAM).
+
+- name: "▶️ [V-254268] Starting detection: Potential emergency accounts"
+  ansible.builtin.debug:
+    msg: "Applying V-254268 (Detect potential emergency local accounts for expiration review)"
+
+- name: "Detect potential emergency local accounts (detection only)"
+  ansible.windows.win_shell: |
+    $excludedNames    = @('Administrator','allensj')
+    $excludedPrefixes = @('svc-')
+
+    $keywords = @('emergency','break glass','firecall','fire-call')
+
+    $users = Get-LocalUser
+
+    $candidates = foreach ($u in $users) {
+        $name = $u.Name
+        $desc = $u.Description
+
+        # Excludes
+        if ($excludedNames -contains $name) { continue }
+        foreach ($prefix in $excludedPrefixes) {
+            if ($name -like "$prefix*") { continue 2 }
+        }
+
+        $lowerName = $name.ToLower()
+        $lowerDesc = ($desc | ForEach-Object { $_.ToString().ToLower() })
+
+        $match = $false
+        foreach ($k in $keywords) {
+            if ($lowerName -like "*$k*" -or $lowerDesc -like "*$k*") {
+                $match = $true
+                break
+            }
+        }
+
+        if ($match) { $u }
+    }
+
+    if (-not $candidates) {
+        Write-Output "No potential emergency local accounts detected."
+    }
+    else {
+        Write-Output "Potential emergency local accounts (naming/description-based):"
+        $candidates | Select-Object Name, Enabled, Description | Format-Table -AutoSize | Out-String
+    }
+  register: v254268_emerg_accounts
+
+- name: "📋 [V-254268] Emergency account report"
+  ansible.builtin.debug:
+    var: v254268_emerg_accounts.stdout
 
