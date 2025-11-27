@@ -1,1 +1,11 @@
+---
+- name: Remediate Windows Server OS STIG (Proof of Concept)
+  hosts: windows
+  gather_facts: false
+
+  collections:
+    - ansible.windows
+
+  roles:
+    - win_os_stig_poc
 
