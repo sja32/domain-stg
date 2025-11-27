@@ -1,6 +1,10 @@
 ---
 # V-205730 — TLS 1.2 must be enabled
 
+- name: ▶️ [V-205730] Starting remediation: Enable TLS 1.2
+  ansible.builtin.debug:
+    msg: "Applying STIG V-205730 (Enable TLS 1.2)"
+
 - name: Enable TLS 1.2 Server
   ansible.windows.win_regedit:
     path: HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Server
@@ -10,8 +14,11 @@
 
 - name: Enable TLS 1.2 Client
   ansible.windows.win_regedit:
-    path: HKLM:\SYSTEM\CurrentControlSet\Services\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Client
+    path: HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Client
     name: Enabled
     data: 1
     type: dword
 
+- name: ✔️ [V-205730] Completed remediation
+  ansible.builtin.debug:
+    msg: "Completed STIG V-205730"
