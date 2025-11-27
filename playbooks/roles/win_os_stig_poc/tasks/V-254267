@@ -1,1 +1,53 @@
+---
+# V-254267 — Temporary user accounts must automatically expire within 72 hours.
+#
+# PoC approach:
+#   - Detection-only (real expiration is usually managed in AD).
+#   - Consider "temporary" local accounts as those whose name or description
+#     contains 'temp' or 'temporary'.
+#   - Exclude Administrator, allensj, svc-*.
+#   - List candidates for manual follow-up in AD / account management process.
+
+- name: "▶️ [V-254267] Starting detection: Potential temporary accounts"
+  ansible.builtin.debug:
+    msg: "Applying V-254267 (Detect potential temporary local accounts for expiration review)"
+
+- name: "Detect potential temporary local accounts (detection only)"
+  ansible.windows.win_shell: |
+    $excludedNames    = @('Administrator','allensj')
+    $excludedPrefixes = @('svc-')
+
+    $users = Get-LocalUser
+
+    $candidates = foreach ($u in $users) {
+        $name = $u.Name
+        $desc = $u.Description
+
+        # Excludes
+        if ($excludedNames -contains $name) { continue }
+        foreach ($prefix in $excludedPrefixes) {
+            if ($name -like "$prefix*") { continue 2 }
+        }
+
+        $lowerName = $name.ToLower()
+        $lowerDesc = ($desc | ForEach-Object { $_.ToString().ToLower() })
+
+        if ($lowerName -like '*temp*' -or $lowerDesc -like '*temp*' -or
+            $lowerName -like '*temporary*' -or $lowerDesc -like '*temporary*') {
+            $u
+        }
+    }
+
+    if (-not $candidates) {
+        Write-Output "No potential temporary local accounts detected."
+    }
+    else {
+        Write-Output "Potential temporary local accounts (naming/description-based):"
+        $candidates | Select-Object Name, Enabled, Description | Format-Table -AutoSize | Out-String
+    }
+  register: v254267_temp_accounts
+
+- name: "📋 [V-254267] Temporary account report"
+  ansible.builtin.debug:
+    var: v254267_temp_accounts.stdout
 
