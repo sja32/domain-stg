@@ -1,1 +1,12 @@
+---
+# V-205657 — Windows Firewall must be enabled
+
+- name: Ensure Windows Firewall is enabled for all profiles
+  ansible.windows.win_firewall_profile:
+    profile: "{{ item }}"
+    state: enabled
+  loop:
+    - Domain
+    - Private
+    - Public
 
