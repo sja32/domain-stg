@@ -43,3 +43,12 @@
   loop: "{{ win_os_stig_poc_effective_list }}"
   loop_control:
     label: "{{ item }}"
+
+- name: 🟢 All selected STIG controls have been remediated
+  ansible.builtin.debug:
+    msg: |
+      *****************************************************
+      COMPLETE:
+      Remediation applied to the following controls:
+      {{ win_os_stig_poc_effective_list }}
+      *****************************************************
