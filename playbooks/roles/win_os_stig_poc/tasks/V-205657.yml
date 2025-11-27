@@ -5,15 +5,10 @@
   ansible.builtin.debug:
     msg: "Applying STIG V-205657 (Enable Firewall)"
 
-- name: Enable Windows Firewall for all profiles
-  ansible.windows.win_firewall_profile:
-    profile: "{{ item }}"
-    state: enabled
-  loop:
-    - Domain
-    - Private
-    - Public
+- name: Enable Windows Firewall (Domain, Private, Public)
+  ansible.windows.win_shell: |
+    Set-NetFirewallProfile -Profile Domain,Private,Public -Enabled True
 
-- name: ✔️ [V-205657] Completed remediation
+- name: "✔️ [V-205657] Completed remediation"
   ansible.builtin.debug:
     msg: "Completed STIG V-205657"
