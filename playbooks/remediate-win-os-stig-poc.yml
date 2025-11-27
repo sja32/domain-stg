@@ -1,6 +1,6 @@
 ---
 - name: Remediate Windows Server OS STIG (Proof of Concept)
-  hosts: windows
+  hosts: all
   gather_facts: false
 
   collections:
