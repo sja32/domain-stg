@@ -1,7 +1,7 @@
 ---
 # V-205657 — Firewall must be enabled
 
-- name: ▶️ [V-205657] Starting remediation: Windows Firewall
+- name: "▶️ [V-205657] Starting remediation: Windows Firewall"
   ansible.builtin.debug:
     msg: "Applying STIG V-205657 (Enable Firewall)"
 
