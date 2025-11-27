@@ -1,7 +1,7 @@
 ---
 # V-205730 — TLS 1.2 must be enabled
 
-- name: ▶️ [V-205730] Starting remediation: Enable TLS 1.2
+- name: "▶️ [V-205730] Starting remediation: Enable TLS 1.2"
   ansible.builtin.debug:
     msg: "Applying STIG V-205730 (Enable TLS 1.2)"
 
