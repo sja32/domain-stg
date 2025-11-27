@@ -1,6 +1,10 @@
 ---
 # V-205733 — TLS 1.0 and 1.1 must be disabled
 
+- name: ▶️ [V-205733] Starting remediation: Disable TLS 1.0/1.1
+  ansible.builtin.debug:
+    msg: "Applying STIG V-205733 (Disable TLS 1.0/1.1)"
+
 - name: Disable TLS 1.0 Server
   ansible.windows.win_regedit:
     path: HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server
@@ -15,3 +19,6 @@
     data: 0
     type: dword
 
+- name: ✔️ [V-205733] Completed remediation
+  ansible.builtin.debug:
+    msg: "Completed STIG V-205733"
