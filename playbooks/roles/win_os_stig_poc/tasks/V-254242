@@ -1,1 +1,20 @@
+---
+# V-254242 — Manually managed application/service account passwords
+# must be at least 14 characters in length.
+#
+# PoC approach:
+#   - Enforce local minimum password length to 14 via "net accounts".
+#   - This impacts all local accounts, which is acceptable in lab.
+
+- name: "▶️ [V-254242] Starting remediation: Min password length for app/service accounts"
+  ansible.builtin.debug:
+    msg: "Applying V-254242 (Enforce MinimumPasswordLength >= 14 via net accounts)"
+
+- name: "Enforce minimum password length of 14 characters"
+  ansible.windows.win_shell: |
+    net accounts /minpwlen:14
+
+- name: "✔️ [V-254242] Completed remediation"
+  ansible.builtin.debug:
+    msg: "Completed V-254242 (Min password length enforced to 14)"
 
