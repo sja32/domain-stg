@@ -1,10 +1,8 @@
 ---
-# Maps V-ID to task file name for include_tasks logic
-
 win_os_stig_poc_control_map:
-  V-254242: "V-254242.yml"
-  V-254243: "V-254243.yml"
-  V-254244: "V-254244.yml"
-  V-254260: "V-254260.yml"
-  V-254267: "V-254267.yml"
-  V-254268: "V-254268.yml"
+  V-254242: "roles/win_os_stig_poc/tasks/V-254242.yml"
+  V-254243: "roles/win_os_stig_poc/tasks/V-254243.yml"
+  V-254244: "roles/win_os_stig_poc/tasks/V-254244.yml"
+  V-254260: "roles/win_os_stig_poc/tasks/V-254260.yml"
+  V-254267: "roles/win_os_stig_poc/tasks/V-254267.yml"
+  V-254268: "roles/win_os_stig_poc/tasks/V-254268.yml"
