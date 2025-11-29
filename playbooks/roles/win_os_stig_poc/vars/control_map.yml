@@ -10,9 +10,12 @@ win_os_stig_poc_control_map:
 
   # NEW: Lab-safe OPEN items – framework only (stubs for now)
   V-254239: "roles/win_os_stig_poc/tasks/V-254239.yml"
+  # Account lockout policy (all 3 V-IDs use the same remediation file)
   V-254285: "roles/win_os_stig_poc/tasks/V-254285.yml"
-  V-254286: "roles/win_os_stig_poc/tasks/V-254286.yml"
-  V-254287: "roles/win_os_stig_poc/tasks/V-254287.yml"
+  V-254286: "roles/win_os_stig_poc/tasks/V-254285.yml"
+  V-254287: "roles/win_os_stig_poc/tasks/V-254285.yml"
+ # End Account lockout policy (all 3 V-IDs use the same remediation file)
+ 
   V-254302: "roles/win_os_stig_poc/tasks/V-254302.yml"
   V-254305: "roles/win_os_stig_poc/tasks/V-254305.yml"
   V-254306: "roles/win_os_stig_poc/tasks/V-254306.yml"
