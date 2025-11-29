@@ -1,14 +1,17 @@
 ---
-# ================================================================
-#  Load Control Map
-# ================================================================
+# =====================================================================
+#  Windows OS STIG Remediation – Main Task Logic (v3)
+#  Supports:
+#   • PoC default controls (enabled flags)
+#   • Extended remediation list (stig_remediation_list)
+#   • AWX-safe file validation
+# =====================================================================
+
 - name: Load control map
   ansible.builtin.include_vars:
-    file: control_map.yml
+    file: "{{ role_path }}/vars/control_map.yml"
+  register: control_map
 
-# ================================================================
-#  Display Selected Controls
-# ================================================================
 - name: 📝 Display selected STIG controls for remediation
   ansible.builtin.debug:
     msg: |
@@ -16,86 +19,84 @@
       Windows OS STIG Remediation (PoC)
       Target Host: {{ inventory_hostname }}
       Selected Controls:
-      {{ (stig_remediation_list | default(windows_selected_controls)) | to_nice_yaml }}
+      {% for x in (win_os_stig_poc_effective_list | default([])) %}
+      - {{ x }}
+      {% endfor %}
       *****************************************************
-  vars:
-    windows_selected_controls: >-
-      {{ win_os_stig_poc_controls
-          | dict2items
-          | selectattr('value.enabled','equalto',true)
-          | map(attribute='key')
-          | list }}
 
-# ================================================================
-#  Build List of Controls to Actually Run
-# ================================================================
+# ---------------------------------------------------------------------
+# MERGE:
+#  1. enabled PoC controls
+#  2. extended stig_remediation_list
+# ---------------------------------------------------------------------
+
 - name: Build effective remediation list
   ansible.builtin.set_fact:
     win_os_stig_poc_effective_list: >-
-      {{ stig_remediation_list
-          | default(
-              win_os_stig_poc_controls
-              | dict2items
-              | selectattr('value.enabled','equalto',true)
-              | map(attribute='key')
-              | list )
+      {{
+        (
+          win_os_stig_poc_controls | dict2items
+        )
+        | selectattr('value.enabled', 'equalto', true)
+        | map(attribute='key')
+        | list
+      +
+        (
+          stig_remediation_list | default([]) | list
+        )
+      | unique
       }}
 
 - name: 🧩 Effective control list (post-merge)
   ansible.builtin.debug:
     var: win_os_stig_poc_effective_list
 
-# ================================================================
-#  VALIDATION — Ensure mapping is correct for each V-ID
-# ================================================================
-- name: ❗ Validate each V-ID exists in win_os_stig_poc_control_map
-  ansible.builtin.fail:
-    msg: "❌ No mapping found for {{ item }} in win_os_stig_poc_control_map!"
-  when: win_os_stig_poc_control_map[item] is not defined
-  loop: "{{ win_os_stig_poc_effective_list }}"
-  loop_control:
-    label: "{{ item }}"
+# ---------------------------------------------------------------------
+# VALIDATE CONTROLS EXIST IN CONTROL MAP
+# ---------------------------------------------------------------------
 
-# ================================================================
-#  File Existence Check on Controller
-# ================================================================
+- name: ❗ Validate each V-ID exists in win_os_stig_poc_control_map
+  ansible.builtin.assert:
+    that:
+      - item in win_os_stig_poc_control_map
+    fail_msg: "ERROR: '{{ item }}' is not defined in control_map.yml"
+    success_msg: "'{{ item }}' exists in control_map.yml"
+  loop: "{{ win_os_stig_poc_effective_list }}"
+  ignore_errors: false
+  when: win_os_stig_poc_effective_list is defined
+
+# ---------------------------------------------------------------------
+# VALIDATE REMEDIATION FILES EXIST (AWX-SAFE)
+# ---------------------------------------------------------------------
+
 - name: Check if remediation task file exists (controller)
   ansible.builtin.stat:
-    path: "{{ win_os_stig_poc_control_map[item] }}"
-  register: task_file_stat
+    path: "{{ playbook_dir }}/roles/win_os_stig_poc/tasks/{{ item }}.yml"
+  register: remediation_files
   delegate_to: localhost
   loop: "{{ win_os_stig_poc_effective_list }}"
-  loop_control:
-    label: "{{ item }}"
 
-# ================================================================
-#  AWX-SAFE Failure if ANY file missing
-# ================================================================
 - name: ❗ Fail if any remediation file is missing
   ansible.builtin.fail:
-    msg: >
-      ❌ Missing remediation file for {{ result.item }}.
-      Expected: {{ win_os_stig_poc_control_map[result.item] }}
+    msg: "❌ Missing remediation file for {{ result.item }}. Expected: playbooks/roles/win_os_stig_poc/tasks/{{ result.item }}.yml"
   when: not result.stat.exists
-  loop: "{{ task_file_stat.results }}"
+  loop: "{{ remediation_files.results }}"
   loop_control:
     loop_var: result
-    label: "{{ result.item }}"
-  delegate_to: localhost
-  run_once: true
 
-# ================================================================
-#  Execute Remediation Tasks
-# ================================================================
-- name: Run remediation tasks for each selected control
-  ansible.builtin.include_tasks: "{{ win_os_stig_poc_control_map[item] }}"
+# ---------------------------------------------------------------------
+# APPLY REMEDIATION FOR EACH CONTROL
+# ---------------------------------------------------------------------
+
+- name: ▶️ Execute remediation controls
+  ansible.builtin.include_tasks:
+    file: "{{ item }}.yml"
   loop: "{{ win_os_stig_poc_effective_list }}"
-  loop_control:
-    label: "{{ item }}"
 
-# ================================================================
-#  Final Message
-# ================================================================
+# ---------------------------------------------------------------------
+# FINAL REPORT
+# ---------------------------------------------------------------------
+
 - name: 🟢 All selected STIG controls have been remediated
   ansible.builtin.debug:
     msg: |
@@ -104,4 +105,3 @@
       Remediation applied to the following controls:
       {{ win_os_stig_poc_effective_list }}
       *****************************************************
-
