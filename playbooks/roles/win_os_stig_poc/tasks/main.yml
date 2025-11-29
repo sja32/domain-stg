@@ -1,8 +1,14 @@
 ---
+# ----------------------------------------------------------------------
+#  Load control map (maps V-IDs → task file paths)
+# ----------------------------------------------------------------------
 - name: Load control map
   ansible.builtin.include_vars:
     file: control_map.yml
 
+# ----------------------------------------------------------------------
+#  Display selected controls (either from inventory or control_map)
+# ----------------------------------------------------------------------
 - name: 📝 Display selected STIG controls for remediation
   ansible.builtin.debug:
     msg: |
@@ -20,7 +26,9 @@
           | map(attribute='key')
           | list }}
 
-# Determine which controls to run
+# ----------------------------------------------------------------------
+#  Determine which controls we are actually going to run
+# ----------------------------------------------------------------------
 - name: Build effective remediation list
   ansible.builtin.set_fact:
     win_os_stig_poc_effective_list: >-
@@ -31,24 +39,18 @@
             | selectattr('value.enabled', 'equalto', true)
             | map(attribute='key')
             | list
-          )
+        )
       }}
 
 - name: 🧩 Effective control list (post-merge)
   ansible.builtin.debug:
     var: win_os_stig_poc_effective_list
 
-- name: Run remediation tasks for each selected control
-  ansible.builtin.include_tasks: "{{ win_os_stig_poc_control_map[item] }}"
-  loop: "{{ win_os_stig_poc_effective_list }}"
-  loop_control:
-    label: "{{ item }}"
+# ----------------------------------------------------------------------
+#  VALIDATION BLOCK — Ensures nothing runs if mapping/files are bad
+# ----------------------------------------------------------------------
+- name: 🔍 Validate control map entries before executing remediation
+  block:
 
-- name: 🟢 All selected STIG controls have been remediated
-  ansible.builtin.debug:
-    msg: |
-      *****************************************************
-      COMPLETE:
-      Remediation applied to the following controls:
-      {{ win_os_stig_poc_effective_list }}
-      *****************************************************
+    # --- Check if the V-ID exists in the mapping file ---
+    - na
