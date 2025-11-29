@@ -1,12 +1,62 @@
 ---
-# V-254485 — framework stub
-# Status: OPEN (lab-safe)
+# V-254285 / V-254286 / V-254287
+# Account lockout policy – full remediation via `net accounts`
+#
+# Requirements from STIG:
+# - V-254285: Account lockout duration >= 15 minutes and not 0
+# - V-254286: Account lockout threshold 3 or fewer invalid logon attempts (not 0)
+# - V-254287: Reset account lockout counter after >= 15 minutes
+#
+# Lab-safe target (POC):
+#   LockoutDuration = 15
+#   LockoutThreshold = 3
+#   LockoutWindow   = 15
 
-- name: ▶️ [V-254485] Starting remediation stub
+- name: ▶️ [V-254285/286/287] Display planned account lockout remediation
   ansible.builtin.debug:
-    msg: "V-254485 remediation stub — no changes applied yet. Implement real logic when ready."
+    msg: |
+      Applying STIG account lockout policy (V-254285, V-254286, V-254287)
+      Target settings:
+        - Lockout Duration (minutes): 15
+        - Lockout Threshold (bad logons): 3
+        - Reset Counter After (minutes): 15
 
-- name: 📋 [V-254485] Placeholder for future implementation
+- name: 💾 [V-254285/286/287] Get current account lockout policy
+  ansible.windows.win_powershell:
+    script: |
+      # Capture current NET ACCOUNTS output for before/after logging
+      $before = net accounts | Out-String
+      $before
+  register: v254285_before
+
+- name: 🛠️ [V-254285/286/287] Enforce STIG-compliant account lockout policy
+  ansible.windows.win_powershell:
+    script: |
+      $DesiredThreshold = 3      # V-254286
+      $DesiredDuration  = 15     # V-254285
+      $DesiredWindow    = 15     # V-254287
+
+      Write-Host "Setting account lockout policy via 'net accounts'..." -ForegroundColor Cyan
+      $cmd = "net accounts /lockoutthreshold:$DesiredThreshold /lockoutduration:$DesiredDuration /lockoutwindow:$DesiredWindow"
+
+      Write-Host "Executing: $cmd"
+      $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd" -Wait -PassThru
+      if ($proc.ExitCode -ne 0) {
+          throw "Failed to set account lockout policy. Exit code: $($proc.ExitCode)"
+      }
+
+      # Show the resulting settings for logging
+      $after = net accounts | Out-String
+      Write-Host "Account policy after remediation:`n$after"
+  register: v254285_remediation
+
+- name: 📋 [V-254285/286/287] Summarize lockout policy change
   ansible.builtin.debug:
-    msg: >
-      TODO: Implement remediation for V-254485 based on Windows Server 2022 STIG.
+    msg: |
+      [V-254285/286/287] Account lockout policy remediation complete.
+
+      Before:
+      {{ v254285_before.stdout | default('N/A') }}
+
+      After:
+      {{ v254285_remediation.stdout | default('See task output in job log') }}
