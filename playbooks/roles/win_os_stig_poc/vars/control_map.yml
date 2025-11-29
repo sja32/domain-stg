@@ -5,4 +5,3 @@ win_os_stig_poc_control_map:
   V-254260: "playbooks/roles/win_os_stig_poc/tasks/V-254260.yml"
   V-254267: "playbooks/roles/win_os_stig_poc/tasks/V-254267.yml"
   V-254268: "playbooks/roles/win_os_stig_poc/tasks/V-254268.yml"
- 
