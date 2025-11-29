@@ -1,27 +1,84 @@
 ---
-# Which controls are enabled in this PoC
+# =====================================================================
+#  Windows OS STIG Remediation – Defaults
+#  This file drives which STIG controls run automatically.
+#  Survey is optional when using this approach.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# EXISTING POC CONTROLS (your original 6)
+# ---------------------------------------------------------------------
 win_os_stig_poc_controls:
-  V-254242:  # App/service acct passwords minimum length
-    enabled: true
-  V-254243:  # App/service acct passwords changed annually
-    enabled: true
-  V-254244:  # Shared user accounts not permitted
-    enabled: true
-  V-254260:  # Nonsystem shares must restrict access
-    enabled: true
-  V-254267:  # Temporary accounts must expire in 72 hours
-    enabled: true
-  V-254268:  # Emergency accounts must expire in 72 hours
+  V-254242:   # App/service account passwords minimum length
     enabled: true
 
-# Global excludes for account-based checks
+  V-254243:   # App/service acct passwords changed annually
+    enabled: true
+
+  V-254244:   # Shared user accounts not permitted
+    enabled: true
+
+  V-254260:   # Nonsystem shares must restrict access
+    enabled: true
+
+  V-254267:   # Temporary accounts must expire in 72 hours
+    enabled: true
+
+  V-254268:   # Emergency accounts must expire in 72 hours
+    enabled: true
+
+# =====================================================================
+# NEW: LAB-SAFE CONTROL LIST (OPEN ITEMS YOU APPROVED)
+# These are safe to run in the lab and do not break the OS
+# =====================================================================
+
+# This list is consumed internally by main.yml to merge with enabled PoC
+stig_remediation_list:
+  - V-254239
+  - V-254285
+  - V-254286
+  - V-254287
+  - V-254302
+  - V-254305
+  - V-254306
+  - V-254307
+  - V-254309
+  - V-254310
+  - V-254315
+  - V-254316
+  - V-254317
+  - V-254318
+  - V-254320
+  - V-254470
+  - V-254471
+  - V-254472
+  - V-254473
+  - V-254475
+  - V-254477
+  - V-254478
+  - V-254479
+  - V-254480
+  - V-254482
+  - V-254484
+  - V-254485
+  - V-254493
+  - V-254494
+
+# =====================================================================
+# ACCOUNT EXCLUDES (applies to any account-based control)
+# =====================================================================
+
 win_os_stig_poc_excluded_accounts:
   - Administrator
   - allensj
 
-# Prefix-style excludes (wildcards handled in PowerShell)
+# Prefix-style excludes (wildcard handled inside PowerShell)
 win_os_stig_poc_excluded_prefixes:
   - 'svc-'
 
-# For V-254243: how many days before a password is considered "stale"
+# =====================================================================
+# Control-specific variables
+# =====================================================================
+
+# For V-254243: maximum age before a password is considered "stale"
 win_os_stig_poc_password_max_age_days: 365
