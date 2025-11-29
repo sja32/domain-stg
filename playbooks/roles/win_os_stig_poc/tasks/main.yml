@@ -27,7 +27,7 @@
           | list }}
 
 # ----------------------------------------------------------------------
-#  Build effective list
+#  Build effective remediation list
 # ----------------------------------------------------------------------
 - name: Build effective remediation list
   ansible.builtin.set_fact:
@@ -48,26 +48,30 @@
 
 
 # ----------------------------------------------------------------------
-# VALIDATION 1 — V-ID exists in control_map.yml
+# VALIDATION 1 — Validate V-ID exists in map (Controller-side only)
 # ----------------------------------------------------------------------
-- name: ❗ Validate each V-ID exists in win_os_stig_poc_control_map
+- name: ❗ Validate V-ID exists in win_os_stig_poc_control_map
   ansible.builtin.fail:
     msg: >
       ❌ ERROR: V-ID {{ item }} is NOT defined in control_map.yml.
       Add it under win_os_stig_poc_control_map.
   when: win_os_stig_poc_control_map[item] is not defined
+  delegate_to: localhost
+  run_once: true
   loop: "{{ win_os_stig_poc_effective_list }}"
   loop_control:
     label: "{{ item }}"
 
 
 # ----------------------------------------------------------------------
-# VALIDATION 2 — Check if the remediation task file exists
+# VALIDATION 2 — Ensure remediation file exists (Controller-side only)
 # ----------------------------------------------------------------------
-- name: Check if remediation task file exists
+- name: Check if remediation task file exists (controller)
   ansible.builtin.stat:
     path: "/runner/project/{{ win_os_stig_poc_control_map[item] }}"
   register: task_file_stat
+  delegate_to: localhost
+  run_once: true
   loop: "{{ win_os_stig_poc_effective_list }}"
   loop_control:
     label: "{{ item }}"
@@ -76,24 +80,26 @@
 - name: ❗ Fail if any remediation file is missing
   ansible.builtin.fail:
     msg: >
-      ❌ ERROR: Missing remediation file for {{ item }}.
-      Expected at: /runner/project/{{ win_os_stig_poc_control_map[item] }}
+      ❌ Missing remediation file for {{ item }}.
+      Expected: /runner/project/{{ win_os_stig_poc_control_map[item] }}
   when: not task_file_stat.results[loop.index0].stat.exists
+  delegate_to: localhost
+  run_once: true
   loop: "{{ win_os_stig_poc_effective_list }}"
   loop_control:
     label: "{{ item }}"
 
 
 # ----------------------------------------------------------------------
-#  Validation complete
+# Validation completion banner
 # ----------------------------------------------------------------------
-- name: ✅ Validation complete — all files present
+- name: ✅ Validation complete — all control map entries and files verified
   ansible.builtin.debug:
-    msg: "All validation passed — proceeding with remediation."
+    msg: "All validation checks passed — beginning Windows remediation."
 
 
 # ----------------------------------------------------------------------
-#  Execute remediation
+# EXECUTE REMEDIATION (Windows hosts only)
 # ----------------------------------------------------------------------
 - name: Run remediation tasks for each selected control
   ansible.builtin.include_tasks: "{{ win_os_stig_poc_control_map[item] }}"
