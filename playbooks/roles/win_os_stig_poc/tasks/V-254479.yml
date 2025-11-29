@@ -1,0 +1,12 @@
+---
+# V-254479 — framework stub
+# Status: OPEN (lab-safe)
+
+- name: ▶️ [V-254479] Starting remediation stub
+  ansible.builtin.debug:
+    msg: "V-254479 remediation stub — no changes applied yet. Implement real logic when ready."
+
+- name: 📋 [V-254479] Placeholder for future implementation
+  ansible.builtin.debug:
+    msg: >
+      TODO: Implement remediation for V-254479 based on Windows Server 2022 STIG.
