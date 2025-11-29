@@ -1,13 +1,13 @@
 ---
 # ----------------------------------------------------------------------
-#  Load control map (maps V-IDs → task file paths)
+#  Load control map
 # ----------------------------------------------------------------------
 - name: Load control map
   ansible.builtin.include_vars:
     file: control_map.yml
 
 # ----------------------------------------------------------------------
-#  Display selected controls (either from inventory or control_map)
+#  Display selected controls
 # ----------------------------------------------------------------------
 - name: 📝 Display selected STIG controls for remediation
   ansible.builtin.debug:
@@ -27,7 +27,7 @@
           | list }}
 
 # ----------------------------------------------------------------------
-#  Determine which controls we are actually going to run
+#  Build effective list
 # ----------------------------------------------------------------------
 - name: Build effective remediation list
   ansible.builtin.set_fact:
@@ -39,18 +39,77 @@
             | selectattr('value.enabled', 'equalto', true)
             | map(attribute='key')
             | list
-        )
+          )
       }}
 
 - name: 🧩 Effective control list (post-merge)
   ansible.builtin.debug:
     var: win_os_stig_poc_effective_list
 
-# ----------------------------------------------------------------------
-#  VALIDATION BLOCK — Ensures nothing runs if mapping/files are bad
-# ----------------------------------------------------------------------
-- name: 🔍 Validate control map entries before executing remediation
-  block:
 
-    # --- Check if the V-ID exists in the mapping file ---
-    - na
+# ----------------------------------------------------------------------
+# VALIDATION 1 — V-ID exists in control_map.yml
+# ----------------------------------------------------------------------
+- name: ❗ Validate each V-ID exists in win_os_stig_poc_control_map
+  ansible.builtin.fail:
+    msg: >
+      ❌ ERROR: V-ID {{ item }} is NOT defined in control_map.yml.
+      Add it under win_os_stig_poc_control_map.
+  when: win_os_stig_poc_control_map[item] is not defined
+  loop: "{{ win_os_stig_poc_effective_list }}"
+  loop_control:
+    label: "{{ item }}"
+
+
+# ----------------------------------------------------------------------
+# VALIDATION 2 — Check if the remediation task file exists
+# ----------------------------------------------------------------------
+- name: Check if remediation task file exists
+  ansible.builtin.stat:
+    path: "/runner/project/{{ win_os_stig_poc_control_map[item] }}"
+  register: task_file_stat
+  loop: "{{ win_os_stig_poc_effective_list }}"
+  loop_control:
+    label: "{{ item }}"
+
+
+- name: ❗ Fail if any remediation file is missing
+  ansible.builtin.fail:
+    msg: >
+      ❌ ERROR: Missing remediation file for {{ item }}.
+      Expected at: /runner/project/{{ win_os_stig_poc_control_map[item] }}
+  when: not task_file_stat.results[loop.index0].stat.exists
+  loop: "{{ win_os_stig_poc_effective_list }}"
+  loop_control:
+    label: "{{ item }}"
+
+
+# ----------------------------------------------------------------------
+#  Validation complete
+# ----------------------------------------------------------------------
+- name: ✅ Validation complete — all files present
+  ansible.builtin.debug:
+    msg: "All validation passed — proceeding with remediation."
+
+
+# ----------------------------------------------------------------------
+#  Execute remediation
+# ----------------------------------------------------------------------
+- name: Run remediation tasks for each selected control
+  ansible.builtin.include_tasks: "{{ win_os_stig_poc_control_map[item] }}"
+  loop: "{{ win_os_stig_poc_effective_list }}"
+  loop_control:
+    label: "{{ item }}"
+
+
+# ----------------------------------------------------------------------
+#  Completion banner
+# ----------------------------------------------------------------------
+- name: 🟢 All selected STIG controls have been remediated
+  ansible.builtin.debug:
+    msg: |
+      *****************************************************
+      COMPLETE:
+      Remediation applied to the following controls:
+      {{ win_os_stig_poc_effective_list }}
+      *****************************************************
